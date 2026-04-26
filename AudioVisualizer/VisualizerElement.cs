@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Media;
+using Microsoft.Win32;
 
 namespace AudioVisualizer;
 
@@ -20,15 +21,55 @@ public sealed class VisualizerElement : FrameworkElement
 
     public VisualizerElement()
     {
-        // Cyan-to-purple gradient for bars
+        var accent = GetWindowsAccentColor();
+        var lighter = LightenColor(accent, 0.5f);
+
+        // Gradient: accent color at bar base, lightened accent at top
         _barBrush = new LinearGradientBrush(
-            Color.FromRgb(0, 220, 255),
-            Color.FromRgb(180, 0, 255),
+            accent,
+            lighter,
             new Point(0, 1), new Point(0, 0));
         _barBrush.Freeze();
 
-        _peakBrush = new SolidColorBrush(Color.FromRgb(255, 255, 255));
+        _peakBrush = new SolidColorBrush(Colors.White);
         _peakBrush.Freeze();
+    }
+
+    /// <summary>
+    /// Reads the Windows accent color from the DWM registry key.
+    /// The value is stored as ABGR (0xAABBGGRR). Falls back to cyan if unavailable.
+    /// </summary>
+    private static Color GetWindowsAccentColor()
+    {
+        try
+        {
+            var value = Registry.GetValue(
+                @"HKEY_CURRENT_USER\Software\Microsoft\Windows\DWM",
+                "AccentColor",
+                null);
+
+            if (value is int abgr)
+            {
+                // DWM stores as 0xAABBGGRR — extract channels accordingly
+                byte a = (byte)((abgr >> 24) & 0xFF);
+                byte b = (byte)((abgr >> 16) & 0xFF);
+                byte g = (byte)((abgr >> 8)  & 0xFF);
+                byte r = (byte)( abgr        & 0xFF);
+                return Color.FromArgb(255, r, g, b);
+            }
+        }
+        catch { /* fall through to default */ }
+
+        return Color.FromRgb(0, 120, 215); // Windows default blue
+    }
+
+    /// <summary>Blends a color toward white by the given factor (0=original, 1=white).</summary>
+    private static Color LightenColor(Color c, float factor)
+    {
+        return Color.FromRgb(
+            (byte)(c.R + (255 - c.R) * factor),
+            (byte)(c.G + (255 - c.G) * factor),
+            (byte)(c.B + (255 - c.B) * factor));
     }
 
     /// <summary>
