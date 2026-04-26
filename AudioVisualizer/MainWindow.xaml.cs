@@ -1,5 +1,7 @@
 ﻿using System.Windows;
 using System.Windows.Media;
+using AudioVisualizer.Services;
+using AudioVisualizer.Processing;
 
 namespace AudioVisualizer;
 

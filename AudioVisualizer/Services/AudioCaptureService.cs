@@ -1,7 +1,7 @@
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 
-namespace AudioVisualizer;
+namespace AudioVisualizer.Services;
 
 /// <summary>
 /// Captures system audio output via WASAPI loopback.

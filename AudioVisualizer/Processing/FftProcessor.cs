@@ -1,7 +1,7 @@
 using NWaves.Transforms;
 using NWaves.Windows;
 
-namespace AudioVisualizer;
+namespace AudioVisualizer.Processing;
 
 /// <summary>
 /// Converts PCM float samples into a mel-scale frequency magnitude spectrum using NWaves.
