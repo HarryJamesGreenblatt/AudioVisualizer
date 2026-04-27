@@ -189,9 +189,9 @@ public sealed class FftProcessor
             // without overdriving everything into the top of the range.
             peak = MathF.Sqrt(peak);
 
-            // Asymmetric smoothing: fast attack so transients feel responsive,
-            // slightly slower release so bands don't snap off abruptly
-            float alpha = peak > _smoothed[b] ? 0.4f : 0.6f;
+            // Smoothing: blend 60% new value, 40% previous — fast enough to track
+            // transients without the jitter that a raw per-frame value would cause.
+            const float alpha = 0.6f;
             _smoothed[b] = (1f - alpha) * _smoothed[b] + alpha * peak;
             bands[b] = _smoothed[b];
         }

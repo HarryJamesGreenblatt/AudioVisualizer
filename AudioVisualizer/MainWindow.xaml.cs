@@ -8,10 +8,14 @@ namespace AudioVisualizer;
 public partial class MainWindow : Window
 {
     private readonly AudioCaptureService _capture = new();
-    private FftProcessor _fft = new(fftSize: 2048, bandCount: 64);
-    private readonly float[] _bands = new float[64];
+    private FftProcessor _fft = new(fftSize: 1024, bandCount: 64);
     private bool _running;
-    private volatile bool _audioReceived;
+
+    // Double-buffer: audio thread writes to _backBuffer then swaps;
+    // UI thread reads from the latest completed snapshot via Interlocked.Exchange.
+    // This guarantees the render side never sees a half-written frame.
+    private float[] _backBuffer = new float[64];
+    private float[]? _readyBuffer;
 
     public MainWindow()
     {
@@ -26,23 +30,22 @@ public partial class MainWindow : Window
     private void OnAudioData(float[] samples)
     {
         int channels = _capture.WaveFormat?.Channels ?? 2;
-        _fft.Process(samples, channels, _bands);
-        _audioReceived = true;
+
+        // Write into the back buffer, then atomically publish it.
+        // Grab whatever buffer the UI side hands back (or null) so we can reuse it next time.
+        _fft.Process(samples, channels, _backBuffer);
+        var old = Interlocked.Exchange(ref _readyBuffer, _backBuffer);
+        _backBuffer = old ?? new float[_fft.BandCount];
     }
 
     private void OnRendering(object? sender, EventArgs e)
     {
         if (!_running) return;
 
-        // If no audio data arrived since last frame, decay bands toward zero
-        if (!_audioReceived)
-        {
-            for (int i = 0; i < _bands.Length; i++)
-                _bands[i] *= 0.85f;
-        }
-        _audioReceived = false;
-
-        Visualizer.Update(_bands);
+        // Atomically grab the latest complete frame (if one is available)
+        var frame = Interlocked.Exchange(ref _readyBuffer, null);
+        if (frame != null)
+            Visualizer.Update(frame);
     }
 
     private void StartStopButton_Click(object sender, RoutedEventArgs e)
@@ -60,7 +63,7 @@ public partial class MainWindow : Window
                 _capture.Start();
                 // Rebuild FftProcessor with the device's actual sample rate
                 int sr = _capture.WaveFormat?.SampleRate ?? 44100;
-                _fft = new FftProcessor(fftSize: 2048, bandCount: 64, sampleRate: sr);
+                _fft = new FftProcessor(fftSize: 1024, bandCount: 64, sampleRate: sr);
                 _running = true;
                 StartStopButton.Content = "Stop";
             }
