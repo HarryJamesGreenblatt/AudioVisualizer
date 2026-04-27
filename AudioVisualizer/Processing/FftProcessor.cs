@@ -55,6 +55,13 @@ public sealed class FftProcessor
     /// Built once in the constructor from the FFT size and sample rate.
     /// </summary>
     private readonly (int start, int end)[] _melBins;
+
+    /// <summary>
+    /// Precomputed per-band gain multipliers that progressively boost higher frequency bands.
+    /// Compensates for the natural spectral roll-off in music (~3-6 dB/octave) so that
+    /// high-frequency content like snares and hi-hats registers visually.
+    /// </summary>
+    private readonly float[] _bandGain;
     #endregion
 
     #region Properties
@@ -87,6 +94,15 @@ public sealed class FftProcessor
 
         // Build the mel filterbank once; it only depends on static parameters
         _melBins = BuildMelFilterbank(fftSize, sampleRate, bandCount, minFreq: 20f, maxFreq: 20000f);
+
+        // Precompute a mild frequency-dependent gain curve: higher bands get a modest boost.
+        // Compensates for the natural spectral roll-off in music without overdriving.
+        _bandGain = new float[bandCount];
+        for (int b = 0; b < bandCount; b++)
+        {
+            float t = (float)b / (bandCount - 1);           // 0 at bass, 1 at treble
+            _bandGain[b] = 1f + 2f * t * t;                 // quadratic ramp: 1× → 3×
+        }
     }
 
     /// <summary>
@@ -164,6 +180,14 @@ public sealed class FftProcessor
                 float mag = MathF.Sqrt(_re[bin] * _re[bin] + _im[bin] * _im[bin]);
                 if (mag > peak) peak = mag;
             }
+
+            // Apply per-band gain to compensate for natural spectral roll-off
+            peak *= _bandGain[b];
+
+            // Square-root compression: gently lifts quieter values so that
+            // high-frequency transients (snares, hi-hats) become visible
+            // without overdriving everything into the top of the range.
+            peak = MathF.Sqrt(peak);
 
             // Asymmetric smoothing: fast attack so transients feel responsive,
             // slightly slower release so bands don't snap off abruptly
