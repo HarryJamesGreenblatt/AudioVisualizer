@@ -1,5 +1,7 @@
 # Audio Visualizer
 
+![CoverImage](AudioVisualizer\assets\img\Cover.png)
+
 A real-time audio spectrum visualizer for Windows built with WPF and .NET 9. Captures system audio output via WASAPI loopback and renders a mel-scale frequency bar visualization that responds to any audio playing through the default output device — Spotify, browsers, games, etc.
 
 ![.NET 9](https://img.shields.io/badge/.NET-9.0-512BD4) ![WPF](https://img.shields.io/badge/UI-WPF-178600) ![License](https://img.shields.io/badge/license-MIT-blue)
