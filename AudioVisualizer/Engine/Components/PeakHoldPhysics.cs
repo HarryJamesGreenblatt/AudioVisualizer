@@ -21,6 +21,11 @@ public sealed class PeakHoldPhysics : IPhysicsComponent
     private float[] _peakVelocity = [];
 
     /// <summary>
+    /// Hold timer per band: counts down physics ticks before the peak begins descending.
+    /// </summary>
+    private int[] _holdTimer = [];
+
+    /// <summary>
     /// Reference to the audio-reactive component that provides bar heights to track against.
     /// </summary>
     private readonly BarSpectrumReactive _bars;
@@ -46,8 +51,11 @@ public sealed class PeakHoldPhysics : IPhysicsComponent
 
     #region Methods
     /// <summary>
-    /// Advance peak indicators one physics tick. Each peak either snaps to the bar
-    /// (if the bar rose above it) or falls under gravity.
+    /// Advance peak indicators one physics tick. Each peak snaps to the bar if
+    /// the bar rises above it, holds briefly, then falls under gentle gravity.
+    /// Gravity is tuned so that within a typical viewport fall (~700px), peak velocity
+    /// never exceeds ~3px per render frame — fast enough to feel physical, slow enough
+    /// to avoid the "multiple peaks" ghosting artifact.
     /// </summary>
     /// <param name="entity">The owning entity (unused for peak logic).</param>
     /// <param name="dt">Fixed physics timestep in seconds.</param>
@@ -60,23 +68,35 @@ public sealed class PeakHoldPhysics : IPhysicsComponent
         {
             _peakHold = new float[barHeights.Length];
             _peakVelocity = new float[barHeights.Length];
+            _holdTimer = new int[barHeights.Length];
         }
 
-        // Gravity constant tuned for 120Hz fixed timestep
-        // Original was 0.5f/frame at ~60fps → equivalent is ~0.25f/tick at 120fps
-        const float gravity = 0.25f;
+        // Hold duration before gravity kicks in (~250ms at 120Hz).
+        // Gives the eye time to register the peak position before it starts falling.
+        const int holdTicks = 30;
+
+        // Gentle gravity: 0.06 px/tick². After a full 700px fall the peak reaches
+        // ~9px/tick ≈ 4.5px per 60Hz render frame — perceptible motion without ghosting.
+        // Compare to original 0.25f which hit 10+ px/render-frame quickly.
+        const float gravity = 0.06f;
 
         for (int i = 0; i < barHeights.Length; i++)
         {
             if (barHeights[i] >= _peakHold[i])
             {
-                // Bar rose above peak → snap peak to bar, reset velocity
+                // Bar rose above peak → snap peak to bar, reset fall state
                 _peakHold[i] = barHeights[i];
                 _peakVelocity[i] = 0f;
+                _holdTimer[i] = holdTicks;
+            }
+            else if (_holdTimer[i] > 0)
+            {
+                // Holding at peak — count down before descent begins
+                _holdTimer[i]--;
             }
             else
             {
-                // Peak falls under gravity (independent of audio data arrival)
+                // Gravity-driven descent: natural 1D kinematics
                 _peakVelocity[i] += gravity;
                 _peakHold[i] = Math.Max(0f, _peakHold[i] - _peakVelocity[i]);
             }
