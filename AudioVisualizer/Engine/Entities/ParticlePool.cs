@@ -42,6 +42,14 @@ public sealed class ParticlePool
     }
     #endregion
 
+    #region Properties
+    /// <summary>
+    /// Direct access to the backing particle array. Physics and render systems
+    /// iterate this buffer directly to avoid delegate/allocation overhead.
+    /// </summary>
+    public Particle[] Buffer => _particles;
+    #endregion
+
     #region Methods
     /// <summary>
     /// Spawn a particle at the given position with velocity and lifetime.
@@ -91,11 +99,11 @@ public sealed class ParticlePool
     }
 
     /// <summary>
-    /// Update Method: advance all live particles one frame.
-    /// Dead particles are returned to the free list (O(1)).
+    /// Tick lifetimes for all live particles and return dead ones to the free list.
+    /// Physics (gravity, velocity) is handled by <see cref="Components.ParticlePhysics"/>;
+    /// this method owns only the lifecycle concern.
     /// </summary>
-    /// <param name="dt">Fixed physics timestep in seconds.</param>
-    public void UpdateAll(float dt)
+    public void TickLifetimes()
     {
         for (int i = 0; i < _particles.Length; i++)
         {
@@ -103,8 +111,6 @@ public sealed class ParticlePool
             if (p.FramesLeft <= 0) continue;
 
             p.FramesLeft--;
-            p.Velocity += new Vector(0, 300 * dt); // gravity
-            p.Position += p.Velocity * dt;
 
             if (p.FramesLeft == 0)
             {

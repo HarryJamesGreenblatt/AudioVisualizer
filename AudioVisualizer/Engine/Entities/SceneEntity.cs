@@ -28,11 +28,6 @@ public class SceneEntity
     public bool IsAlive { get; set; } = true;
 
     /// <summary>
-    /// Optional physics component responsible for gravity, collision, and integration.
-    /// </summary>
-    public IPhysicsComponent? Physics { get; init; }
-
-    /// <summary>
     /// Optional render component responsible for drawing the entity each frame.
     /// </summary>
     public IRenderComponent? Render { get; init; }
@@ -61,7 +56,6 @@ public class SceneEntity
     public void Update(float dt, ReadOnlySpan<float> bands)
     {
         AudioReactive?.React(this, bands);
-        Physics?.Update(this, dt);
     }
 
     /// <summary>

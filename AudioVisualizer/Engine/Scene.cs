@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Media;
+using AudioVisualizer.Engine.Components;
 
 namespace AudioVisualizer.Engine;
 
@@ -26,6 +27,12 @@ public sealed class Scene
     /// The pool of particles for visual effects.
     /// </summary>
     private readonly ParticlePool _particles = new(capacity: 512);
+
+    /// <summary>
+    /// Scene-level physics systems. Iterated every fixed-timestep tick.
+    /// Add new physics concerns via <see cref="AddSystem"/> — no need to touch this class.
+    /// </summary>
+    private readonly List<IPhysicsSystem> _physicsSystems = new();
 
     /// <summary>
     /// Event queue for transient events from the audio thread (e.g. beat hits) to be processed on the main thread.
@@ -55,7 +62,20 @@ public sealed class Scene
     public ParticlePool Particles => _particles;
     #endregion
 
+    #region Constructor
+    public Scene()
+    {
+        _physicsSystems.Add(new ParticlePhysics(_particles));
+    }
+    #endregion
+
     #region Methods
+    /// <summary>
+    /// Register a scene-level physics system. Called once during setup;
+    /// the system runs automatically every physics tick from that point on.
+    /// </summary>
+    public void AddSystem(IPhysicsSystem system) => _physicsSystems.Add(system);
+
     /// <summary>
     /// Add an entity to the scene.
     /// </summary>
@@ -91,7 +111,15 @@ public sealed class Scene
             foreach (var entity in _entities)
                 entity.Update(PhysicsDt, bands);
 
-            _particles.UpdateAll(PhysicsDt);
+            // Physics pipeline: forces → integration → collision, per system
+            foreach (var system in _physicsSystems)
+                system.ApplyForces(PhysicsDt);
+            foreach (var system in _physicsSystems)
+                system.Integrate(PhysicsDt);
+            foreach (var system in _physicsSystems)
+                system.ResolveCollisions(PhysicsDt);
+
+            _particles.TickLifetimes();
             _physicsAccumulator -= PhysicsDt;
         }
 

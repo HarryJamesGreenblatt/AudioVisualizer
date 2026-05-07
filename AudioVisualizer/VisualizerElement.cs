@@ -27,11 +27,11 @@ public sealed class VisualizerElement : FrameworkElement
         _barEntity = new SceneEntity
         {
             AudioReactive = _barReactive,
-            Physics = peakPhysics,
             Render = renderer,
         };
 
         _scene.Add(_barEntity);
+        _scene.AddSystem(peakPhysics);
     }
 
     /// <summary>Expose the scene's transient queue for the audio thread to enqueue events.</summary>
