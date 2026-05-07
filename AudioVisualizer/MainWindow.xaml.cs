@@ -13,7 +13,6 @@ public partial class MainWindow : Window
 
     // Double-buffer: audio thread writes to _backBuffer then swaps;
     // UI thread reads from the latest completed snapshot via Interlocked.Exchange.
-    // This guarantees the render side never sees a half-written frame.
     private float[] _backBuffer = new float[64];
     private float[]? _readyBuffer;
 
@@ -32,7 +31,6 @@ public partial class MainWindow : Window
         int channels = _capture.WaveFormat?.Channels ?? 2;
 
         // Write into the back buffer, then atomically publish it.
-        // Grab whatever buffer the UI side hands back (or null) so we can reuse it next time.
         _fft.Process(samples, channels, _backBuffer);
         var old = Interlocked.Exchange(ref _readyBuffer, _backBuffer);
         _backBuffer = old ?? new float[_fft.BandCount];
@@ -44,8 +42,11 @@ public partial class MainWindow : Window
 
         // Atomically grab the latest complete frame (if one is available)
         var frame = Interlocked.Exchange(ref _readyBuffer, null);
-        if (frame != null)
-            Visualizer.Update(frame);
+
+        // Pass actual data as a span, or Empty when no new audio arrived.
+        // Empty span causes AudioReactive to skip (bars retain last values),
+        // while physics still ticks — fixing both strobe and frozen-peaks bugs.
+        Visualizer.Tick(frame != null ? frame.AsSpan() : ReadOnlySpan<float>.Empty);
     }
 
     private void StartStopButton_Click(object sender, RoutedEventArgs e)
@@ -61,7 +62,6 @@ public partial class MainWindow : Window
             try
             {
                 _capture.Start();
-                // Rebuild FftProcessor with the device's actual sample rate
                 int sr = _capture.WaveFormat?.SampleRate ?? 44100;
                 _fft = new FftProcessor(fftSize: 1024, bandCount: 64, sampleRate: sr);
                 _running = true;

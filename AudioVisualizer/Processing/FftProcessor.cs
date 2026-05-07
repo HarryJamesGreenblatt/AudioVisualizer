@@ -152,15 +152,17 @@ public sealed class FftProcessor
         }
 
         // If the frame is below the noise floor, treat as silence:
-        // skip the FFT entirely and decay bands directly — avoids the WASAPI
-        // "silent buffer" problem where non-zero noise keeps resetting the decay.
-        const float SilenceThreshold = 5e-6f;
+        // Skip the FFT entirely when the input is below the noise floor.
+        // WASAPI loopback delivers non-zero samples even when nothing is playing;
+        // a threshold of 1e-4 reliably catches this while passing any real audio.
+        const float SilenceThreshold = 1e-4f;
         if (inputPeak < SilenceThreshold)
         {
             for (int b = 0; b < BandCount; b++)
             {
-                // Decay each band toward zero without running the FFT
-                _smoothed[b] *= 0.7f;
+                // Aggressive decay toward zero — reaches imperceptible levels within ~0.5s
+                _smoothed[b] *= 0.85f;
+                if (_smoothed[b] < 1e-5f) _smoothed[b] = 0f;  // snap to zero to avoid perpetual residue
                 bands[b] = _smoothed[b];
             }
             return;
@@ -189,10 +191,12 @@ public sealed class FftProcessor
             // without overdriving everything into the top of the range.
             peak = MathF.Sqrt(peak);
 
-            // Smoothing: blend 60% new value, 40% previous — fast enough to track
-            // transients without the jitter that a raw per-frame value would cause.
-            const float alpha = 0.6f;
-            _smoothed[b] = (1f - alpha) * _smoothed[b] + alpha * peak;
+            // Asymmetric smoothing: near-instant attack for tight transient response,
+            // moderate release to avoid jitter on decay. This eliminates the perceived
+            // latency that a symmetric 0.6 blend introduces on rising edges.
+            float prev = _smoothed[b];
+            float alpha = peak >= prev ? 0.9f : 0.55f;  // attack: 90% new, release: 55% new
+            _smoothed[b] = (1f - alpha) * prev + alpha * peak;
             bands[b] = _smoothed[b];
         }
     }
