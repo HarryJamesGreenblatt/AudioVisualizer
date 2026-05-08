@@ -83,4 +83,10 @@ public partial class MainWindow : Window
         CompositionTarget.Rendering -= OnRendering;
         _capture.Dispose();
     }
+
+    private void RainToggle_Changed(object sender, RoutedEventArgs e)
+        => Visualizer.SetRain(RainToggle.IsChecked == true);
+
+    private void BallToggle_Changed(object sender, RoutedEventArgs e)
+        => Visualizer.SetBall(BallToggle.IsChecked == true);
 }

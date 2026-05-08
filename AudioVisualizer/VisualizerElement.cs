@@ -18,6 +18,14 @@ public sealed class VisualizerElement : FrameworkElement
     #region Fields
     private readonly Scene _scene = new();
     private DateTime _lastTick = DateTime.UtcNow;
+
+    // Always-present entities — bars and peaks are the foundation.
+    private readonly BarEntity _bars = new();
+    private readonly PeakEntity _peaks;
+
+    // Optional entities — null when their layer is toggled off.
+    private RainEntity? _rain;
+    private BallEntity? _ball;
     #endregion
 
     #region Properties
@@ -26,40 +34,31 @@ public sealed class VisualizerElement : FrameworkElement
 
     /// <summary>Expose the scene for external entity management.</summary>
     public Scene Scene => _scene;
+
+    /// <summary>Whether the rain layer is active.</summary>
+    public bool IsRainEnabled => _rain != null;
+
+    /// <summary>Whether the beach ball is active.</summary>
+    public bool IsBallEnabled => _ball != null;
     #endregion
 
     #region Constructor
     public VisualizerElement()
     {
-        // Bars first so their renderer clears the background before others draw on top.
-        var bars = new BarEntity();
-        var peaks = new PeakEntity(bars);
-        var rain = new RainEntity(_scene.Particles);
-        var ball = new BallEntity(
-            position: new Point(200, 100),
-            bars: bars,
-            peaks: peaks,
-            radius: 40,
-            initialVelocity: new Vector(100, 50));
+        // Bars and peaks are always present.
+        _peaks = new PeakEntity(_bars);
+        _scene.Add(_bars);
+        _scene.Add(_peaks);
 
-        // Wire the particle pool's collision physics to the bar surface so rain drops
-        // can bounce off the visible spectrum (and the floor) instead of falling forever,
-        // and to the ball so drops splash off it too.
+        // Wire the particle pool's bar reference so rain drops can collide with bars.
         if (_scene.Particles.Physics is AudioVisualizer.Engine.Components.PhysicsComponent.Particle pp)
-        {
-            pp.Bars = bars.Bars;
-            pp.BallEntityRef = ball;
-        }
+            pp.Bars = _bars.Bars;
 
-        // Render order: bars (background) → rain (mid) → peaks → ball (foreground).
-        _scene.Add(bars);
-        _scene.Add(rain);
-        _scene.Add(peaks);
-        _scene.Add(ball);
+        // Start with optional layers enabled.
+        SetRain(true);
+        SetBall(true);
 
         // Mouse input bridge: WPF events → Scene.Mouse. The engine never references WPF.
-        // The viewport is fully painted each frame by the bar renderer, so hit-testing
-        // already covers every pixel in our bounds.
         Focusable = true;
         MouseDown += OnMouseDown;
         MouseMove += OnMouseMove;
@@ -88,6 +87,54 @@ public sealed class VisualizerElement : FrameworkElement
     {
         if (ActualWidth <= 0 || ActualHeight <= 0) return;
         _scene.Render(dc, new Size(ActualWidth, ActualHeight));
+    }
+    #endregion
+
+    #region Layer Toggles
+    /// <summary>Add or remove the peak-hold indicators.</summary>
+    /// <summary>Add or remove the rain layer.</summary>
+    public void SetRain(bool enabled)
+    {
+        if (enabled && _rain == null)
+        {
+            _rain = new RainEntity(_scene.Particles);
+            _scene.Add(_rain);
+        }
+        else if (!enabled && _rain != null)
+        {
+            _scene.Remove(_rain);
+            _rain = null;
+        }
+    }
+
+    /// <summary>Add or remove the beach ball.</summary>
+    public void SetBall(bool enabled)
+    {
+        if (enabled && _ball == null)
+        {
+            _ball = new BallEntity(
+                position: new Point(200, 100),
+                bars: _bars,
+                peaks: _peaks,
+                radius: 40,
+                initialVelocity: new Vector(100, 50));
+
+            // Let rain drops collide with the ball.
+            if (_scene.Particles.Physics is AudioVisualizer.Engine.Components.PhysicsComponent.Particle pp)
+                pp.BallEntityRef = _ball;
+
+            _scene.Add(_ball);
+        }
+        else if (!enabled && _ball != null)
+        {
+            _scene.Remove(_ball);
+
+            // Clear ball collision reference so particle physics doesn't hold a dead ref.
+            if (_scene.Particles.Physics is AudioVisualizer.Engine.Components.PhysicsComponent.Particle pp)
+                pp.BallEntityRef = null;
+
+            _ball = null;
+        }
     }
     #endregion
 
