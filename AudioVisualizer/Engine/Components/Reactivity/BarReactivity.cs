@@ -1,14 +1,14 @@
 using System;
 using System.Windows;
 
-namespace AudioVisualizer.Engine.Components;
+namespace AudioVisualizer.Engine.Components.Reactivity;
 
 /// <summary>
-/// AudioReactive component for the spectrum bar entity.
+/// Reactivity component for the spectrum bar entity.
 /// Receives mel-band data and updates bar heights with global-max scaling.
 /// Runs before physics so peak-hold has fresh bar heights to track.
 /// </summary>
-public sealed class BarSpectrumReactive : IAudioReactiveComponent
+public sealed class BarReactivity : IReactivityComponent
 {
     #region Fields
     /// <summary>
@@ -31,19 +31,15 @@ public sealed class BarSpectrumReactive : IAudioReactiveComponent
     #endregion
 
     #region Methods
-    /// <summary>
-    /// Map incoming mel-band magnitudes into pixel-space bar heights using dynamic global-max scaling.
-    /// </summary>
-    /// <param name="entity">The owning entity (Position.Y encodes viewport height).</param>
-    /// <param name="bands">Current mel-band magnitudes from the FFT processor.</param>
-    public void React(SceneEntity entity, ReadOnlySpan<float> bands)
+    /// <inheritdoc />
+    public void React(SceneEntity entity, ReadOnlySpan<float> bands, Size viewport)
     {
         if (bands.IsEmpty) return;
 
         if (BarHeights.Length != bands.Length)
             BarHeights = new float[bands.Length];
 
-        // Global max: instant rise, very slow decay (0.9995/frame @ 120fps physics ≈ same feel as 60fps render)
+        // Global max: instant rise, very slow decay
         float currentMax = 0.001f;
         foreach (float v in bands)
             if (v > currentMax) currentMax = v;
@@ -53,9 +49,8 @@ public sealed class BarSpectrumReactive : IAudioReactiveComponent
         else
             _globalMax = Math.Max(0.01f, _globalMax * 0.9995f);
 
-        // Scale into pixel space using viewport height from entity position (Y stores viewport height)
-        float viewportHeight = (float)entity.Position.Y;
-        float scale = viewportHeight / _globalMax;
+        // Scale into pixel space using viewport height
+        float scale = (float)viewport.Height / _globalMax;
 
         for (int i = 0; i < bands.Length; i++)
             BarHeights[i] = bands[i] * scale;

@@ -1,48 +1,54 @@
 using System.Windows;
 using System.Windows.Media;
 using AudioVisualizer.Engine;
-using AudioVisualizer.Engine.Components;
+using AudioVisualizer.Engine.Entities;
 
 namespace AudioVisualizer;
 
 /// <summary>
-/// WPF host element for the Scene engine.
-/// Owns the Scene, the bar-spectrum entity, and the render surface.
-/// MainWindow feeds it audio data and frame ticks; it delegates to the ECS.
+/// WPF host element for the Scene engine. Owns the Scene, constructs the initial
+/// entity set (bars, peaks, beach ball), and forwards frame ticks from the compositor.
+///
+/// All physics/render/reactive concerns live inside the entities themselves —
+/// this class is purely a WPF↔engine bridge.
 /// </summary>
 public sealed class VisualizerElement : FrameworkElement
 {
+    #region Fields
     private readonly Scene _scene = new();
-    private readonly SceneEntity _barEntity;
-    private readonly BarSpectrumReactive _barReactive;
     private DateTime _lastTick = DateTime.UtcNow;
+    #endregion
 
-    public VisualizerElement()
-    {
-        // Wire up the bar-spectrum entity with its three components
-        _barReactive = new BarSpectrumReactive();
-        var peakPhysics = new PeakHoldPhysics(_barReactive);
-        var renderer = new BarSpectrumRenderer(_barReactive, peakPhysics);
-
-        _barEntity = new SceneEntity
-        {
-            AudioReactive = _barReactive,
-            Render = renderer,
-        };
-
-        _scene.Add(_barEntity);
-        _scene.AddSystem(peakPhysics);
-    }
-
+    #region Properties
     /// <summary>Expose the scene's transient queue for the audio thread to enqueue events.</summary>
     public EventQueue<TransientEvent> TransientQueue => _scene.TransientQueue;
 
-    /// <summary>Expose the scene for external entity management (e.g., adding beach balls).</summary>
+    /// <summary>Expose the scene for external entity management.</summary>
     public Scene Scene => _scene;
+    #endregion
 
+    #region Constructor
+    public VisualizerElement()
+    {
+        // Bars first so their renderer clears the background before others draw on top.
+        var bars = new BarEntity();
+        var peaks = new PeakEntity(bars);
+        var ball = new BallEntity(
+            position: new Point(200, 100),
+            radius: 40,
+            initialVelocity: new Vector(100, 50),
+            audioReactive: true);
+
+        _scene.Add(bars);
+        _scene.Add(peaks);
+        _scene.Add(ball);
+    }
+    #endregion
+
+    #region Methods
     /// <summary>
     /// Called each frame by the compositor (CompositionTarget.Rendering).
-    /// Feeds audio data into the scene and advances physics, regardless of whether new audio arrived.
+    /// Feeds audio data into the scene and advances physics regardless of whether new audio arrived.
     /// </summary>
     public void Tick(ReadOnlySpan<float> bands)
     {
@@ -50,16 +56,15 @@ public sealed class VisualizerElement : FrameworkElement
         float dt = (float)(now - _lastTick).TotalSeconds;
         _lastTick = now;
 
-        // Store viewport height on entity position so audio-reactive can scale into pixels
-        _barEntity.Position = new Point(ActualWidth, ActualHeight);
-
         _scene.Tick(dt, bands, new Size(ActualWidth, ActualHeight));
         InvalidateVisual();
     }
 
+    /// <inheritdoc />
     protected override void OnRender(DrawingContext dc)
     {
         if (ActualWidth <= 0 || ActualHeight <= 0) return;
         _scene.Render(dc, new Size(ActualWidth, ActualHeight));
     }
+    #endregion
 }

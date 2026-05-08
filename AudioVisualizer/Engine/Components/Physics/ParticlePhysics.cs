@@ -1,18 +1,19 @@
 using System.Windows;
+using AudioVisualizer.Engine.Entities;
 
-namespace AudioVisualizer.Engine.Components;
+namespace AudioVisualizer.Engine.Components.Physics;
 
 /// <summary>
-/// Physics component for the particle pool.
+/// Physics component for the particle pool entity.
 /// Applies gravity and integrates velocity → position for all live particles.
-/// Runs in the fixed-timestep physics loop, keeping the pool class itself
-/// focused solely on allocation (Object Pool pattern).
+/// Operates on the pool's struct buffer directly to avoid per-particle dispatch overhead
+/// — each particle is data, not an entity, so batch processing preserves cache locality.
 /// </summary>
-public sealed class ParticlePhysics : IPhysicsSystem
+public sealed class ParticlePhysics : IPhysicsComponent
 {
     #region Fields
     /// <summary>
-    /// The particle pool whose live particles this component acts on.
+    /// The pool entity whose particle buffer this component acts on.
     /// </summary>
     private readonly ParticlePool _pool;
     #endregion
@@ -27,9 +28,9 @@ public sealed class ParticlePhysics : IPhysicsSystem
 
     #region Constructor
     /// <summary>
-    /// Create a particle physics component operating on the given pool.
+    /// Create a particle physics component operating on the given pool's buffer.
     /// </summary>
-    /// <param name="pool">The pool whose particles receive physics updates.</param>
+    /// <param name="pool">The pool entity whose particles receive physics updates.</param>
     public ParticlePhysics(ParticlePool pool)
     {
         _pool = pool;
@@ -38,33 +39,34 @@ public sealed class ParticlePhysics : IPhysicsSystem
 
     #region Methods
     /// <inheritdoc />
-    public void ApplyForces(float dt)
+    public void ApplyForces(SceneEntity entity, float dt)
     {
         var buffer = _pool.Buffer;
         for (int i = 0; i < buffer.Length; i++)
         {
             ref var p = ref buffer[i];
             if (p.FramesLeft <= 0) continue;
-
             p.Velocity += new Vector(0, Gravity * dt);
         }
     }
 
     /// <inheritdoc />
-    public void Integrate(float dt)
+    public void Integrate(SceneEntity entity, float dt)
     {
         var buffer = _pool.Buffer;
         for (int i = 0; i < buffer.Length; i++)
         {
             ref var p = ref buffer[i];
             if (p.FramesLeft <= 0) continue;
-
             p.Position += p.Velocity * dt;
         }
+
+        // Lifecycle tick belongs here (post-integration), not in the pool itself.
+        _pool.TickLifetimes();
     }
 
     /// <inheritdoc />
-    public void ResolveCollisions(float dt)
+    public void ResolveCollisions(SceneEntity entity, float dt, Size viewport)
     {
         // Particles have no collision surfaces — no-op.
     }

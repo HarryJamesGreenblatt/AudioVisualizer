@@ -5,9 +5,10 @@ using System.Windows.Media;
 namespace AudioVisualizer.Engine;
 
 /// <summary>
-/// Thin shell representing a game-world object. Holds shared state (position, velocity)
-/// and optional components that plug in physics, rendering, and audio-reactivity.
-/// Communication between decoupled systems happens via the <see cref="Collision"/> event (Observer pattern).
+/// Thin shell representing a game-world object. Owns shared state (position, velocity)
+/// and three optional components — Reactivity, Physics, Rendering — each encapsulating
+/// one concern. Subclasses wire concrete components in their constructors; the base
+/// class orchestrates the per-tick component pipeline.
 /// </summary>
 public class SceneEntity
 {
@@ -28,14 +29,22 @@ public class SceneEntity
     public bool IsAlive { get; set; } = true;
 
     /// <summary>
-    /// Optional render component responsible for drawing the entity each frame.
+    /// Reactivity component: maps audio band data to entity state.
+    /// Settable from subclass constructors via protected setter.
     /// </summary>
-    public IRenderComponent? Render { get; init; }
+    public IReactivityComponent? Reactivity { get; protected set; }
 
     /// <summary>
-    /// Optional audio-reactive component that maps frequency band data to entity state.
+    /// Physics component: forces, integration, and collision for this entity.
+    /// Settable from subclass constructors via protected setter.
     /// </summary>
-    public IAudioReactiveComponent? AudioReactive { get; init; }
+    public IPhysicsComponent? Physics { get; protected set; }
+
+    /// <summary>
+    /// Rendering component: draws the entity each frame.
+    /// Settable from subclass constructors via protected setter.
+    /// </summary>
+    public IRenderingComponent? Rendering { get; protected set; }
     #endregion
 
     #region Events
@@ -48,14 +57,30 @@ public class SceneEntity
 
     #region Methods
     /// <summary>
-    /// Update Method pattern: advance entity state for one tick.
-    /// Audio-reactive runs first so bar heights are fresh for physics collision.
+    /// Update Method pattern: advance entity state for one fixed-timestep tick.
+    /// Reactivity runs first (audio → state), then physics phases 1+2 (forces, integration).
+    /// Phase 3 (collision) runs separately via <see cref="ResolveCollisions"/> so the scene
+    /// can interleave inter-entity collision after all entities have integrated.
     /// </summary>
     /// <param name="dt">Fixed physics timestep in seconds.</param>
     /// <param name="bands">Current mel-band magnitudes (may be empty if no audio).</param>
-    public void Update(float dt, ReadOnlySpan<float> bands)
+    /// <param name="viewport">Current viewport dimensions.</param>
+    public virtual void Update(float dt, ReadOnlySpan<float> bands, Size viewport)
     {
-        AudioReactive?.React(this, bands);
+        Reactivity?.React(this, bands, viewport);
+        Physics?.ApplyForces(this, dt);
+        Physics?.Integrate(this, dt);
+    }
+
+    /// <summary>
+    /// Run the physics collision phase. Separated from <see cref="Update"/> so the scene
+    /// can run all entity integrations first, then resolve collisions consistently.
+    /// </summary>
+    /// <param name="dt">Fixed physics timestep in seconds.</param>
+    /// <param name="viewport">Current viewport dimensions.</param>
+    public virtual void ResolveCollisions(float dt, Size viewport)
+    {
+        Physics?.ResolveCollisions(this, dt, viewport);
     }
 
     /// <summary>
@@ -63,14 +88,14 @@ public class SceneEntity
     /// </summary>
     /// <param name="dc">WPF drawing context for immediate-mode rendering.</param>
     /// <param name="viewport">Current viewport dimensions.</param>
-    public void Draw(DrawingContext dc, Size viewport)
+    public virtual void Draw(DrawingContext dc, Size viewport)
     {
-        Render?.Render(this, dc, viewport);
+        Rendering?.Render(this, dc, viewport);
     }
 
     /// <summary>
     /// Fire collision notification to all observers.
-    /// Called by physics components when overlap is detected.
+    /// Called by physics components when contact is detected.
     /// </summary>
     /// <param name="info">Contact point, normal, and impulse data.</param>
     internal void NotifyCollision(CollisionInfo info) => Collision?.Invoke(this, info);

@@ -1,14 +1,21 @@
 using System;
 using System.Windows;
 using System.Windows.Media;
+using AudioVisualizer.Engine.Components.Physics;
+using AudioVisualizer.Engine.Components.Rendering;
 
-namespace AudioVisualizer.Engine;
+namespace AudioVisualizer.Engine.Entities;
 
 /// <summary>
-/// Object Pool pattern: pre-allocated fixed array of particles with a free-list
-/// for O(1) allocation/deallocation. No GC pressure during gameplay.
+/// Particle pool entity. Combines the Object Pool pattern (free-list allocation of
+/// fixed-size struct buffer) with the Component pattern (Physics + Rendering components
+/// that operate on the buffer in batch).
+///
+/// Particles themselves are <see cref="Particle"/> structs — packed for cache locality
+/// and zero GC pressure during gameplay. Treating each particle as its own
+/// <see cref="SceneEntity"/> would destroy that performance, so the pool is the entity boundary.
 /// </summary>
-public sealed class ParticlePool
+public sealed class ParticlePool : SceneEntity
 {
     #region Fields
     /// <summary>
@@ -22,9 +29,18 @@ public sealed class ParticlePool
     private int _firstAvailable;
     #endregion
 
+    #region Properties
+    /// <summary>
+    /// Direct access to the backing particle array. Physics and render components
+    /// iterate this buffer directly to avoid delegate/allocation overhead.
+    /// </summary>
+    public Particle[] Buffer => _particles;
+    #endregion
+
     #region Constructor
     /// <summary>
-    /// Initialize the pool with a given capacity, threading the free list through all slots.
+    /// Initialize the pool with a given capacity, threading the free list through all slots,
+    /// and wire up its Physics and Rendering components.
     /// </summary>
     /// <param name="capacity">Maximum number of concurrent particles.</param>
     public ParticlePool(int capacity = 512)
@@ -33,37 +49,27 @@ public sealed class ParticlePool
         for (int i = 0; i < capacity; i++)
             _particles[i] = new Particle();
 
-        // Initialize free list: each particle points to the next available slot
+        // Free list: each particle points to the next available slot
         for (int i = 0; i < capacity - 1; i++)
             _particles[i].NextFree = i + 1;
-        _particles[capacity - 1].NextFree = -1; // end of list
+        _particles[capacity - 1].NextFree = -1;
 
         _firstAvailable = 0;
-    }
-    #endregion
 
-    #region Properties
-    /// <summary>
-    /// Direct access to the backing particle array. Physics and render systems
-    /// iterate this buffer directly to avoid delegate/allocation overhead.
-    /// </summary>
-    public Particle[] Buffer => _particles;
+        // Wire up components — pool is the entity, components operate on its buffer
+        Physics = new ParticlePhysics(this);
+        Rendering = new ParticleRenderer(this);
+    }
     #endregion
 
     #region Methods
     /// <summary>
     /// Spawn a particle at the given position with velocity and lifetime.
-    /// Returns false (silently) if the pool is full — the user won't notice one fewer sparkle.
+    /// Returns false (silently) if the pool is full.
     /// </summary>
-    /// <param name="position">World-space spawn point.</param>
-    /// <param name="velocity">Initial velocity vector.</param>
-    /// <param name="lifetimeFrames">Number of physics ticks before the particle dies.</param>
-    /// <param name="color">Base render color (alpha fades with lifetime).</param>
-    /// <returns>True if a particle was spawned; false if pool is exhausted.</returns>
     public bool Spawn(Point position, Vector velocity, int lifetimeFrames, Color color)
     {
-        if (_firstAvailable == -1)
-            return false;
+        if (_firstAvailable == -1) return false;
 
         int slot = _firstAvailable;
         ref var p = ref _particles[slot];
@@ -80,11 +86,6 @@ public sealed class ParticlePool
     /// <summary>
     /// Spawn a burst of particles radiating outward from a point.
     /// </summary>
-    /// <param name="origin">World-space center of the burst.</param>
-    /// <param name="count">Number of particles to emit.</param>
-    /// <param name="speed">Base radial speed (randomized ±50%).</param>
-    /// <param name="lifetime">Lifetime in physics ticks.</param>
-    /// <param name="color">Base render color.</param>
     public void SpawnBurst(Point origin, int count, float speed, int lifetime, Color color)
     {
         var rng = Random.Shared;
@@ -94,14 +95,13 @@ public sealed class ParticlePool
             float s = speed * (0.5f + (float)rng.NextDouble());
             var vel = new Vector(Math.Cos(angle) * s, -Math.Abs(Math.Sin(angle)) * s);
             if (!Spawn(origin, vel, lifetime, color))
-                break; // pool full, stop trying
+                break;
         }
     }
 
     /// <summary>
     /// Tick lifetimes for all live particles and return dead ones to the free list.
-    /// Physics (gravity, velocity) is handled by <see cref="Components.ParticlePhysics"/>;
-    /// this method owns only the lifecycle concern.
+    /// Called by ParticlePhysics after the integration phase.
     /// </summary>
     public void TickLifetimes()
     {
@@ -111,32 +111,11 @@ public sealed class ParticlePool
             if (p.FramesLeft <= 0) continue;
 
             p.FramesLeft--;
-
             if (p.FramesLeft == 0)
             {
-                // Return to free list
                 p.NextFree = _firstAvailable;
                 _firstAvailable = i;
             }
-        }
-    }
-
-    /// <summary>
-    /// Render all live particles to the drawing context.
-    /// </summary>
-    /// <param name="dc">WPF drawing context for immediate-mode rendering.</param>
-    public void RenderAll(DrawingContext dc)
-    {
-        for (int i = 0; i < _particles.Length; i++)
-        {
-            ref var p = ref _particles[i];
-            if (p.FramesLeft <= 0) continue;
-
-            // Fade out as lifetime decreases
-            byte alpha = (byte)Math.Clamp(p.FramesLeft * 8, 0, 255);
-            var brush = new SolidColorBrush(Color.FromArgb(alpha, p.Color.R, p.Color.G, p.Color.B));
-            brush.Freeze();
-            dc.DrawEllipse(brush, null, p.Position, 2, 2);
         }
     }
     #endregion

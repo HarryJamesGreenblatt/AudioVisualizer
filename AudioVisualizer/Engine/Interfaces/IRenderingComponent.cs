@@ -7,7 +7,7 @@ namespace AudioVisualizer.Engine;
 /// Component responsible for drawing an entity to the screen.
 /// Called once per render frame after all physics ticks are complete.
 /// </summary>
-public interface IRenderComponent
+public interface IRenderingComponent
 {
     /// <summary>
     /// Draw the entity to the given context.
