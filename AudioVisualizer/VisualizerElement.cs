@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Input;
 using System.Windows.Media;
 using AudioVisualizer.Engine;
 using AudioVisualizer.Engine.Entities;
@@ -10,7 +11,7 @@ namespace AudioVisualizer;
 /// entity set (bars, peaks, beach ball), and forwards frame ticks from the compositor.
 ///
 /// All physics/render/reactive concerns live inside the entities themselves —
-/// this class is purely a WPF↔engine bridge.
+/// this class is purely a WPF↔engine bridge (frame ticks + mouse input).
 /// </summary>
 public sealed class VisualizerElement : FrameworkElement
 {
@@ -43,6 +44,15 @@ public sealed class VisualizerElement : FrameworkElement
         _scene.Add(bars);
         _scene.Add(peaks);
         _scene.Add(ball);
+
+        // Mouse input bridge: WPF events → Scene.Mouse. The engine never references WPF.
+        // The viewport is fully painted each frame by the bar renderer, so hit-testing
+        // already covers every pixel in our bounds.
+        Focusable = true;
+        MouseDown += OnMouseDown;
+        MouseMove += OnMouseMove;
+        MouseUp   += OnMouseUp;
+        MouseLeave += OnMouseLeave;
     }
     #endregion
 
@@ -66,6 +76,51 @@ public sealed class VisualizerElement : FrameworkElement
     {
         if (ActualWidth <= 0 || ActualHeight <= 0) return;
         _scene.Render(dc, new Size(ActualWidth, ActualHeight));
+    }
+    #endregion
+
+    #region Mouse → Scene.Mouse bridge
+    private void OnMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        var p = e.GetPosition(this);
+        var m = _scene.Mouse;
+        m.Position = p;
+        m.IsDown = true;
+        m.JustPressed = true;
+        m.JustReleased = false;
+        _scene.Mouse = m;
+        CaptureMouse(); // keep receiving moves even if the cursor leaves our bounds during a drag
+    }
+
+    private void OnMouseMove(object sender, MouseEventArgs e)
+    {
+        var m = _scene.Mouse;
+        m.Position = e.GetPosition(this);
+        _scene.Mouse = m;
+    }
+
+    private void OnMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        var m = _scene.Mouse;
+        m.Position = e.GetPosition(this);
+        m.IsDown = false;
+        m.JustPressed = false;
+        m.JustReleased = true;
+        _scene.Mouse = m;
+        if (IsMouseCaptured) ReleaseMouseCapture();
+    }
+
+    private void OnMouseLeave(object sender, MouseEventArgs e)
+    {
+        // Treat losing the cursor mid-drag the same as a release so the ball doesn't
+        // get stuck in kinematic mode if the window loses focus or the cursor exits.
+        if (_scene.Mouse.IsDown)
+        {
+            var m = _scene.Mouse;
+            m.IsDown = false;
+            m.JustReleased = true;
+            _scene.Mouse = m;
+        }
     }
     #endregion
 }

@@ -323,6 +323,10 @@ public abstract class PhysicsComponent
         /// <inheritdoc />
         public override void ApplyForces(SceneEntity entity, float dt)
         {
+            // Kinematic entities are externally controlled (e.g. user dragging the ball);
+            // skip force/drag accumulation so the input component can dictate position freely.
+            if (entity.IsKinematic) return;
+
             // Gravity as a real force: F_grav = m · g (mass cancels in integration, but the
             // accumulator pattern is preserved so wind/springs/buoyancy can compose linearly later).
             AddForce(new Vector(0, Gravity * Mass));
@@ -348,6 +352,13 @@ public abstract class PhysicsComponent
         /// <inheritdoc />
         public override void Integrate(SceneEntity entity, float dt)
         {
+            // Kinematic entities have their position dictated by the input component;
+            // we still tick rotation so the ball can spin while held.
+            if (entity.IsKinematic)
+            {
+                IntegrateRotation(dt);
+                return;
+            }
             IntegrateAccumulated(entity, dt);
         }
 
@@ -357,6 +368,9 @@ public abstract class PhysicsComponent
             // Refractory countdown ticks even on no-contact frames.
             if (_bounceRefractory > 0)
                 _bounceRefractory = Math.Max(0, _bounceRefractory - dt);
+
+            // While being dragged, skip all collision response — the user dictates position.
+            if (entity.IsKinematic) return;
 
             var pos = entity.Position;
             var vel = entity.Velocity;

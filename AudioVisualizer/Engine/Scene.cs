@@ -50,6 +50,13 @@ public sealed class Scene
     public int EntityCount => _entities.Count;
 
     /// <summary>
+    /// Current mouse state. Mutated by the WPF host between ticks; read by
+    /// <see cref="Components.InputComponent"/> instances inside the tick. The engine
+    /// itself never references WPF — this property is the entire interaction surface.
+    /// </summary>
+    public MouseState Mouse { get; set; }
+
+    /// <summary>
     /// Fixed physics timestep in seconds (120 ticks/sec for smooth gravity).
     /// </summary>
     private const float PhysicsDt = 1f / 120f;
@@ -92,11 +99,24 @@ public sealed class Scene
 
         // 2. Fixed-timestep physics loop (Game Loop pattern)
         _physicsAccumulator += dt;
+
+        // Snapshot mouse so all sub-ticks see a consistent state, then clear edge-triggered
+        // flags so JustPressed/JustReleased fire for exactly one tick even if multiple
+        // physics sub-steps run between renders.
+        var mouseThisFrame = Mouse;
+        var mouseAfterEdges = mouseThisFrame;
+        mouseAfterEdges.JustPressed = false;
+        mouseAfterEdges.JustReleased = false;
+
+        bool firstSubTick = true;
         while (_physicsAccumulator >= PhysicsDt)
         {
-            // Phase A: each entity reacts to audio + applies forces + integrates
+            var mouseForTick = firstSubTick ? mouseThisFrame : mouseAfterEdges;
+            firstSubTick = false;
+
+            // Phase A: each entity processes input + reacts to audio + applies forces + integrates
             foreach (var entity in _entities)
-                entity.Update(PhysicsDt, bands, viewport);
+                entity.Update(PhysicsDt, mouseForTick, bands, viewport);
 
             // Phase B: collision resolution after all entities have moved
             foreach (var entity in _entities)
@@ -104,6 +124,9 @@ public sealed class Scene
 
             _physicsAccumulator -= PhysicsDt;
         }
+
+        // Persist the mouse state with edge flags consumed so the next frame starts fresh.
+        Mouse = mouseAfterEdges;
 
         // 3. Remove dead entities (the particle pool is never marked dead)
         _entities.RemoveAll(e => !e.IsAlive);

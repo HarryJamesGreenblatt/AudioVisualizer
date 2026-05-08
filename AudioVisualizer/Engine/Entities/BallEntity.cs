@@ -22,5 +22,6 @@ public sealed class BallEntity : SceneEntity
         var physics = new PhysicsComponent.Ball(radius, bars.Bars, peakPhysics);
         Physics   = physics;
         Rendering = new RenderingComponent.Ball(physics);
+        Input     = new InputComponent.Drag(physics);
     }
 }

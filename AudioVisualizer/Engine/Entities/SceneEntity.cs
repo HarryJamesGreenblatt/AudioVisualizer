@@ -30,6 +30,19 @@ public class SceneEntity
     public bool IsAlive { get; set; } = true;
 
     /// <summary>
+    /// When true, physics components skip force application and integration for this entity.
+    /// Used by <see cref="Components.InputComponent.Drag"/> to suspend simulation while the
+    /// user is holding the entity, and by any "frozen" / paused state machine.
+    /// </summary>
+    public bool IsKinematic { get; set; }
+
+    /// <summary>
+    /// Input component: translates user input (mouse, keys) into entity-state mutations.
+    /// Settable from subclass constructors via protected setter.
+    /// </summary>
+    public InputComponent? Input { get; protected set; }
+
+    /// <summary>
     /// Reactivity component: maps audio band data to entity state.
     /// Settable from subclass constructors via protected setter.
     /// </summary>
@@ -59,15 +72,17 @@ public class SceneEntity
     #region Methods
     /// <summary>
     /// Update Method pattern: advance entity state for one fixed-timestep tick.
-    /// Reactivity runs first (audio → state), then physics phases 1+2 (forces, integration).
-    /// Phase 3 (collision) runs separately via <see cref="ResolveCollisions"/> so the scene
-    /// can interleave inter-entity collision after all entities have integrated.
+    /// Pipeline order: Input → Reactivity → Physics (forces → integration). Collision
+    /// runs separately via <see cref="ResolveCollisions"/> so the scene can interleave
+    /// inter-entity collision after all entities have integrated.
     /// </summary>
     /// <param name="dt">Fixed physics timestep in seconds.</param>
+    /// <param name="mouse">Mouse snapshot for this tick.</param>
     /// <param name="bands">Current mel-band magnitudes (may be empty if no audio).</param>
     /// <param name="viewport">Current viewport dimensions.</param>
-    public virtual void Update(float dt, ReadOnlySpan<float> bands, Size viewport)
+    public virtual void Update(float dt, MouseState mouse, ReadOnlySpan<float> bands, Size viewport)
     {
+        Input?.Update(this, mouse, viewport, dt);
         Reactivity?.React(this, bands, viewport, dt);
         Physics?.ApplyForces(this, dt);
         Physics?.Integrate(this, dt);
