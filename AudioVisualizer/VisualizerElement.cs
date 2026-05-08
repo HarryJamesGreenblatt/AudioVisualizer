@@ -34,6 +34,7 @@ public sealed class VisualizerElement : FrameworkElement
         // Bars first so their renderer clears the background before others draw on top.
         var bars = new BarEntity();
         var peaks = new PeakEntity(bars);
+        var rain = new RainEntity(_scene.Particles);
         var ball = new BallEntity(
             position: new Point(200, 100),
             bars: bars,
@@ -41,7 +42,14 @@ public sealed class VisualizerElement : FrameworkElement
             radius: 40,
             initialVelocity: new Vector(100, 50));
 
+        // Wire the particle pool's collision physics to the bar surface so rain drops
+        // can bounce off the visible spectrum (and the floor) instead of falling forever.
+        if (_scene.Particles.Physics is AudioVisualizer.Engine.Components.PhysicsComponent.Particle pp)
+            pp.Bars = bars.Bars;
+
+        // Render order: bars (background) → rain (mid) → peaks → ball (foreground).
         _scene.Add(bars);
+        _scene.Add(rain);
         _scene.Add(peaks);
         _scene.Add(ball);
 

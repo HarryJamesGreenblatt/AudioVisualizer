@@ -268,9 +268,29 @@ public abstract class RenderingComponent
                 if (p.FramesLeft <= 0) continue;
 
                 byte alpha = (byte)Math.Clamp(p.FramesLeft * 8, 0, 255);
-                var brush = new SolidColorBrush(Color.FromArgb(alpha, p.Color.R, p.Color.G, p.Color.B));
-                brush.Freeze();
-                dc.DrawEllipse(brush, null, p.Position, 2, 2);
+                var color = Color.FromArgb(alpha, p.Color.R, p.Color.G, p.Color.B);
+
+                if (p.Kind == ParticlePool.ParticleKind.RainDrop)
+                {
+                    // Streak: short line segment along the velocity vector. Length is
+                    // proportional to speed so faster drops look longer (motion blur).
+                    var pen = new Pen(new SolidColorBrush(color), 1.2);
+                    pen.Freeze();
+                    var v = p.Velocity;
+                    double speed = v.Length;
+                    if (speed < 1) { dc.DrawEllipse(new SolidColorBrush(color), null, p.Position, 1.5, 1.5); continue; }
+                    var dir = v / speed;
+                    double streakLen = Math.Min(speed * 0.025, 18.0); // cap so very fast drops don't draw a giant line
+                    var head = p.Position;
+                    var tail = new Point(head.X - dir.X * streakLen, head.Y - dir.Y * streakLen);
+                    dc.DrawLine(pen, tail, head);
+                }
+                else
+                {
+                    var brush = new SolidColorBrush(color);
+                    brush.Freeze();
+                    dc.DrawEllipse(brush, null, p.Position, 2, 2);
+                }
             }
         }
     }

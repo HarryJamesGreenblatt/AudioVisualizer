@@ -1,5 +1,6 @@
 using System;
 using System.Windows;
+using System.Windows.Media;
 
 namespace AudioVisualizer.Engine.Components;
 
@@ -90,6 +91,80 @@ public abstract class ReactivityComponent
                 }
             }
         }
+    }
+    #endregion
+
+    // ────────────────────────────────────────────────────────────────────────
+    #region Nested: RainEmitter
+    /// <summary>
+    /// Continuous rain emitter. Spawns drops across the top of the viewport at a baseline
+    /// rate, optionally scaled up by audio amplitude (heavier rain when the music is louder).
+    /// Owns no physics or rendering of its own — the spawned drops are particles in the
+    /// shared <see cref="Entities.ParticlePool"/> and animate via the standard particle pipeline.
+    /// </summary>
+    public sealed class RainEmitter : ReactivityComponent
+    {
+        #region Fields
+        private readonly Entities.ParticlePool _pool;
+        private double _spawnAccumulator;
+
+        /// <summary>Baseline drops per second when no audio (or silent audio) is present.</summary>
+        private const double BaselineDropsPerSecond = 80.0;
+
+        /// <summary>Maximum drops per second at peak audio amplitude.</summary>
+        private const double PeakDropsPerSecond = 200.0;
+
+        /// <summary>Initial downward speed of a freshly spawned drop (px/sec). Picked to look near terminal.</summary>
+        private const double SpawnSpeed = 700.0;
+
+        /// <summary>Random horizontal jitter on initial velocity (px/sec). Slight breeze.</summary>
+        private const double SpawnHorizontalJitter = 60.0;
+
+        /// <summary>Drop lifetime in 120Hz physics ticks (~1.5 seconds is enough to traverse a tall window).</summary>
+        private const int DropLifetime = 180;
+        #endregion
+
+        #region Constructor
+        /// <summary>Create a rain emitter that spawns drops into the given pool.</summary>
+        public RainEmitter(Entities.ParticlePool pool) { _pool = pool; }
+        #endregion
+
+        #region Methods
+        /// <inheritdoc />
+        public override void React(SceneEntity entity, ReadOnlySpan<float> bands, Size viewport, float dt)
+        {
+            if (viewport.Width <= 0 || dt <= 0) return;
+
+            // Audio amplitude (mean of all bands) drives spawn-rate intensity. With no audio,
+            // amplitude is 0 and rain falls at the baseline rate.
+            double amplitude = 0;
+            if (!bands.IsEmpty)
+            {
+                double sum = 0;
+                for (int i = 0; i < bands.Length; i++) sum += bands[i];
+                amplitude = Math.Clamp(sum / bands.Length, 0, 1);
+            }
+
+            double rate = BaselineDropsPerSecond + (PeakDropsPerSecond - BaselineDropsPerSecond) * amplitude;
+            _spawnAccumulator += rate * dt;
+
+            var rng = Random.Shared;
+            int toSpawn = (int)_spawnAccumulator;
+            _spawnAccumulator -= toSpawn;
+
+            // Soft blue-white drop color
+            var dropColor = Color.FromArgb(180, 180, 210, 255);
+
+            for (int i = 0; i < toSpawn; i++)
+            {
+                double x = rng.NextDouble() * viewport.Width;
+                double vx = (rng.NextDouble() - 0.5) * 2 * SpawnHorizontalJitter;
+                var pos = new Point(x, -8); // start just above the viewport so streak fades in naturally
+                var vel = new Vector(vx, SpawnSpeed);
+                _pool.SpawnRainDrop(pos, vel, DropLifetime, dropColor);
+            }
+        }
+        #endregion
     }
     #endregion
 }

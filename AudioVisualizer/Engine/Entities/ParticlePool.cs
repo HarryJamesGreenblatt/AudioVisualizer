@@ -42,7 +42,8 @@ public sealed class ParticlePool : SceneEntity
     /// and wire up its Physics and Rendering components.
     /// </summary>
     /// <param name="capacity">Maximum number of concurrent particles.</param>
-    public ParticlePool(int capacity = 512)
+    /// <param name="bars">Optional bar reactivity — enables rain-drop bouncing off the bar surface.</param>
+    public ParticlePool(int capacity = 512, ReactivityComponent.Bar? bars = null)
     {
         _particles = new Particle[capacity];
         for (int i = 0; i < capacity; i++)
@@ -56,17 +57,17 @@ public sealed class ParticlePool : SceneEntity
         _firstAvailable = 0;
 
         // Wire up components — pool is the entity, components operate on its buffer
-        Physics   = new PhysicsComponent.Particle(this);
+        Physics   = new PhysicsComponent.Particle(this, bars);
         Rendering = new RenderingComponent.Particle(this);
     }
     #endregion
 
     #region Methods
     /// <summary>
-    /// Spawn a particle at the given position with velocity and lifetime.
+    /// Spawn a particle at the given position with velocity, lifetime, and kind.
     /// Returns false (silently) if the pool is full.
     /// </summary>
-    public bool Spawn(Point position, Vector velocity, int lifetimeFrames, Color color)
+    public bool Spawn(Point position, Vector velocity, int lifetimeFrames, Color color, ParticleKind kind = ParticleKind.Spark)
     {
         if (_firstAvailable == -1) return false;
 
@@ -78,12 +79,15 @@ public sealed class ParticlePool : SceneEntity
         p.Velocity = velocity;
         p.FramesLeft = lifetimeFrames;
         p.Color = color;
+        p.Kind = kind;
+        p.BounceUsed = false;
         p.NextFree = -1;
         return true;
     }
 
     /// <summary>
-    /// Spawn a burst of particles radiating outward from a point.
+    /// Spawn a burst of spark particles radiating outward from a point. Used for
+    /// transient/impact effects. Spawned particles are <see cref="ParticleKind.Spark"/>.
     /// </summary>
     public void SpawnBurst(Point origin, int count, float speed, int lifetime, Color color)
     {
@@ -93,24 +97,42 @@ public sealed class ParticlePool : SceneEntity
             double angle = rng.NextDouble() * Math.PI * 2;
             float s = speed * (0.5f + (float)rng.NextDouble());
             var vel = new Vector(Math.Cos(angle) * s, -Math.Abs(Math.Sin(angle)) * s);
-            if (!Spawn(origin, vel, lifetime, color))
+            if (!Spawn(origin, vel, lifetime, color, ParticleKind.Spark))
                 break;
         }
     }
 
     /// <summary>
+    /// Spawn a single rain drop at the given position, falling with the given downward
+    /// speed. Drops are pre-flagged so the renderer streaks them along their velocity.
+    /// </summary>
+    public bool SpawnRainDrop(Point position, Vector velocity, int lifetimeFrames, Color color)
+    {
+        return Spawn(position, velocity, lifetimeFrames, color, ParticleKind.RainDrop);
+    }
+
+    /// <summary>
     /// Tick lifetimes for all live particles and return dead ones to the free list.
-    /// Called by ParticlePhysics after the integration phase.
+    /// Called by ParticlePhysics after the integration phase. Idempotently reclaims
+    /// any slot whose <c>FramesLeft</c> reached \u2264 0 (whether by countdown or by an
+    /// external kill from collision code) and isn't already linked into the free list.
     /// </summary>
     public void TickLifetimes()
     {
         for (int i = 0; i < _particles.Length; i++)
         {
             ref var p = ref _particles[i];
-            if (p.FramesLeft <= 0) continue;
 
-            p.FramesLeft--;
-            if (p.FramesLeft == 0)
+            if (p.FramesLeft > 0)
+            {
+                p.FramesLeft--;
+                if (p.FramesLeft != 0) continue;
+            }
+
+            // FramesLeft is 0. Reclaim the slot if it isn't already in the free list.
+            // Live slots are flagged with NextFree == -1 in Spawn; a slot that has been
+            // killed externally (e.g. drop-on-second-contact) is also -1 and needs reclaiming.
+            if (p.NextFree == -1)
             {
                 p.NextFree = _firstAvailable;
                 _firstAvailable = i;
@@ -120,6 +142,19 @@ public sealed class ParticlePool : SceneEntity
     #endregion
 
     #region Nested Types
+    /// <summary>
+    /// Categorizes how a particle is rendered and how physics treats it.
+    /// One byte in the struct; renderers/physics components dispatch on this.
+    /// </summary>
+    public enum ParticleKind : byte
+    {
+        /// <summary>Default: small alpha-fading dot, no surface collision (legacy bursts/sparks).</summary>
+        Spark = 0,
+
+        /// <summary>Falling rain drop: streaked along velocity, bounces once off surfaces, then dies.</summary>
+        RainDrop = 1,
+    }
+
     /// <summary>
     /// Individual particle state. Struct for cache-friendly iteration.
     /// When not alive (FramesLeft ≤ 0), NextFree stores the free-list link.
@@ -137,6 +172,12 @@ public sealed class ParticlePool : SceneEntity
 
         /// <summary>Base render color.</summary>
         public Color Color;
+
+        /// <summary>Render/physics kind. See <see cref="ParticleKind"/>.</summary>
+        public ParticleKind Kind;
+
+        /// <summary>True once a kind-eligible particle has consumed its single allowed bounce.</summary>
+        public bool BounceUsed;
 
         /// <summary>Index of next free slot in the pool, or -1 if end of list / in-use.</summary>
         public int NextFree;

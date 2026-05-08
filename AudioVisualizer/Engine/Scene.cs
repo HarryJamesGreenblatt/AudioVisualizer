@@ -134,12 +134,18 @@ public sealed class Scene
 
     /// <summary>
     /// Render all entities to the given drawing context. Order matters:
-    /// background-clearing entities should be added first.
+    /// background-clearing entities should be added first. The shared particle pool
+    /// is rendered LAST so drops/sparks always layer on top of bars, peaks, and the
+    /// ball — otherwise the bar renderer's background fill would overpaint them.
     /// </summary>
     public void Render(DrawingContext dc, Size viewport)
     {
         foreach (var entity in _entities)
+        {
+            if (entity == _particles) continue;
             entity.Draw(dc, viewport);
+        }
+        _particles.Draw(dc, viewport);
     }
     #endregion
 }

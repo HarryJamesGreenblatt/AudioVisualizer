@@ -678,13 +678,36 @@ public abstract class PhysicsComponent
     {
         private readonly ParticlePool _pool;
 
+        /// <summary>
+        /// Optional bar reactivity, queried for live floor heights when resolving rain-drop
+        /// collision. Settable post-construction because the pool is created inside Scene
+        /// before any BarEntity exists — the WPF host wires this after both are constructed.
+        /// </summary>
+        public ReactivityComponent.Bar? Bars { get; set; }
+
         /// <inheritdoc />
         public override float Gravity => 300f;
 
         /// <summary>
-        /// Create a particle physics component operating on the given pool's buffer.
+        /// Restitution applied when a rain drop bounces off a surface. Drops are mostly
+        /// inelastic — they don't behave like balls. Low number, slight retained energy
+        /// produces a brief diagonal trail before the drop dies.
         /// </summary>
-        public Particle(ParticlePool pool) { _pool = pool; }
+        public override float Restitution => 0.15f;
+
+        /// <summary>Lifetime (in 120Hz ticks) a rain drop has after using its single bounce.</summary>
+        private const int PostBounceLifetime = 30;
+
+        /// <summary>
+        /// Create a particle physics component operating on the given pool's buffer.
+        /// Pass a bar reactivity to enable rain-drop bouncing off the bar surface;
+        /// pass null for spark-only behavior (no surface interaction).
+        /// </summary>
+        public Particle(ParticlePool pool, ReactivityComponent.Bar? bars = null)
+        {
+            _pool = pool;
+            Bars = bars;
+        }
 
         /// <inheritdoc />
         public override void ApplyForces(SceneEntity entity, float dt)
@@ -710,6 +733,53 @@ public abstract class PhysicsComponent
             }
             // Lifecycle tick belongs here, not in the pool itself.
             _pool.TickLifetimes();
+        }
+
+        /// <inheritdoc />
+        public override void ResolveCollisions(SceneEntity entity, float dt, Size viewport)
+        {
+            // Spark particles have no surface interaction — they fall and die at lifetime end.
+            // Rain drops bounce once off the bars (or the floor) and then die quickly.
+            if (Bars == null) return;
+            var heights = Bars.BarHeights;
+            int barCount = heights.Length;
+            double colWidth = barCount > 0 ? viewport.Width / barCount : 0;
+
+            var buffer = _pool.Buffer;
+            for (int i = 0; i < buffer.Length; i++)
+            {
+                ref var p = ref buffer[i];
+                if (p.FramesLeft <= 0) continue;
+                if (p.Kind != ParticlePool.ParticleKind.RainDrop) continue;
+
+                // Surface y at this drop's column (top of the tallest thing under it).
+                double surfaceY = viewport.Height; // floor as fallback
+                if (barCount > 0 && colWidth > 0 && p.Position.X >= 0 && p.Position.X < viewport.Width)
+                {
+                    int col = Math.Clamp((int)(p.Position.X / colWidth), 0, barCount - 1);
+                    double barTop = viewport.Height - heights[col];
+                    if (barTop < surfaceY) surfaceY = barTop;
+                }
+
+                if (p.Position.Y < surfaceY) continue; // not yet contacting
+
+                if (p.BounceUsed)
+                {
+                    // Already bounced once — this is a re-contact, kill the drop now.
+                    p.FramesLeft = 0;
+                    continue;
+                }
+
+                // Single inelastic bounce: snap to surface, retain a fraction of vertical
+                // velocity (now upward) and most of horizontal velocity.
+                p.Position = new Point(p.Position.X, surfaceY);
+                p.Velocity = new Vector(p.Velocity.X * 0.6, -Math.Abs(p.Velocity.Y) * Restitution);
+                p.BounceUsed = true;
+
+                // Shrink remaining lifetime so the post-bounce trail fades out fast —
+                // the drop has "splashed" and is just briefly visible afterward.
+                if (p.FramesLeft > PostBounceLifetime) p.FramesLeft = PostBounceLifetime;
+            }
         }
     }
     #endregion
