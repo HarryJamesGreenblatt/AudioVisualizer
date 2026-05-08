@@ -1,5 +1,6 @@
 using System;
 using System.Windows;
+using AudioVisualizer.Engine.Input;
 
 namespace AudioVisualizer.Engine.Components;
 

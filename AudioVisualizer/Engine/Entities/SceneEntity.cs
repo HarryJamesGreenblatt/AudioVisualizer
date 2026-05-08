@@ -2,6 +2,7 @@ using System;
 using System.Windows;
 using System.Windows.Media;
 using AudioVisualizer.Engine.Components;
+using AudioVisualizer.Engine.Input;
 
 namespace AudioVisualizer.Engine;
 

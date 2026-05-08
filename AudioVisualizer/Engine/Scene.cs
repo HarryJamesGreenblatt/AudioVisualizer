@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Media;
 using AudioVisualizer.Engine.Entities;
+using AudioVisualizer.Engine.Input;
 
 namespace AudioVisualizer.Engine;
 

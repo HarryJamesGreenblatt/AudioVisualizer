@@ -1,6 +1,6 @@
 using System.Windows;
 
-namespace AudioVisualizer.Engine;
+namespace AudioVisualizer.Engine.Input;
 
 /// <summary>
 /// Plain-data snapshot of the mouse for one tick. Owned by <see cref="Scene"/>,
