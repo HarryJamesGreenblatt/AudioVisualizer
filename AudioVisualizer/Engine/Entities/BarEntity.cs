@@ -1,31 +1,24 @@
-using AudioVisualizer.Engine.Components.Reactivity;
-using AudioVisualizer.Engine.Components.Rendering;
+using AudioVisualizer.Engine.Components;
 
 namespace AudioVisualizer.Engine.Entities;
 
 /// <summary>
-/// Bar spectrum entity. Represents the audio-driven frequency bars across the bottom of the viewport.
-/// Owns a BarReactivity (audio → heights) and BarRenderer (draws bars + clears background).
-/// No Physics component — bars are purely audio-driven, not simulated.
+/// Bar spectrum entity. Audio-driven frequency bars across the bottom of the viewport.
+/// Owns a <see cref="ReactivityComponent.Bar"/> + <see cref="RenderingComponent.Bar"/>.
+/// No physics — bars are pure audio reflections, not simulated.
 /// </summary>
 public sealed class BarEntity : SceneEntity
 {
-    #region Properties
     /// <summary>
-    /// The bar reactivity component, exposed so peer entities (e.g. PeakEntity) can read live heights.
+    /// The bar reactivity, exposed so peer entities (e.g. <see cref="PeakEntity"/>) can read live heights.
     /// </summary>
-    public BarReactivity Bars { get; }
-    #endregion
+    public ReactivityComponent.Bar Bars { get; }
 
-    #region Constructor
-    /// <summary>
-    /// Construct a bar entity with reactivity and rendering wired up.
-    /// </summary>
+    /// <summary>Construct a bar entity with reactivity and rendering wired up.</summary>
     public BarEntity()
     {
-        Bars = new BarReactivity();
+        Bars = new ReactivityComponent.Bar();
         Reactivity = Bars;
-        Rendering = new BarRenderer(Bars);
+        Rendering = new RenderingComponent.Bar(Bars);
     }
-    #endregion
 }

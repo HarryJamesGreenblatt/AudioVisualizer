@@ -1,8 +1,7 @@
 using System;
 using System.Windows;
 using System.Windows.Media;
-using AudioVisualizer.Engine.Components.Physics;
-using AudioVisualizer.Engine.Components.Rendering;
+using AudioVisualizer.Engine.Components;
 
 namespace AudioVisualizer.Engine.Entities;
 
@@ -57,8 +56,8 @@ public sealed class ParticlePool : SceneEntity
         _firstAvailable = 0;
 
         // Wire up components — pool is the entity, components operate on its buffer
-        Physics = new ParticlePhysics(this);
-        Rendering = new ParticleRenderer(this);
+        Physics   = new PhysicsComponent.Particle(this);
+        Rendering = new RenderingComponent.Particle(this);
     }
     #endregion
 

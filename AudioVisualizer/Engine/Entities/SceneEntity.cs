@@ -1,6 +1,7 @@
 using System;
 using System.Windows;
 using System.Windows.Media;
+using AudioVisualizer.Engine.Components;
 
 namespace AudioVisualizer.Engine;
 
@@ -32,19 +33,19 @@ public class SceneEntity
     /// Reactivity component: maps audio band data to entity state.
     /// Settable from subclass constructors via protected setter.
     /// </summary>
-    public IReactivityComponent? Reactivity { get; protected set; }
+    public ReactivityComponent? Reactivity { get; protected set; }
 
     /// <summary>
     /// Physics component: forces, integration, and collision for this entity.
     /// Settable from subclass constructors via protected setter.
     /// </summary>
-    public IPhysicsComponent? Physics { get; protected set; }
+    public PhysicsComponent? Physics { get; protected set; }
 
     /// <summary>
     /// Rendering component: draws the entity each frame.
     /// Settable from subclass constructors via protected setter.
     /// </summary>
-    public IRenderingComponent? Rendering { get; protected set; }
+    public RenderingComponent? Rendering { get; protected set; }
     #endregion
 
     #region Events
