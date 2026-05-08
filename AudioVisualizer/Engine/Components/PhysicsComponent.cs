@@ -685,8 +685,42 @@ public abstract class PhysicsComponent
         /// </summary>
         public ReactivityComponent.Bar? Bars { get; set; }
 
+        /// <summary>
+        /// Optional ball entity reference for drop-vs-ball collision. Drops that hit the
+        /// ball splash off in the contact-normal direction (same single-bounce-then-die
+        /// rule as bar collision). Settable post-construction.
+        /// </summary>
+        public SceneEntity? BallEntityRef { get; set; }
+
+        /// <summary>
+        /// Scene-wide wind — the AIR'S velocity (px/sec). Each rain drop computes its drag
+        /// against (its velocity − this wind), so smaller (lower-mass) drops accelerate to
+        /// match the wind faster than larger drops, producing physically correct varied motion.
+        /// Sparks ignore wind entirely; they're impulse-driven and short-lived.
+        /// </summary>
+        public Vector Wind { get; set; }
+
+        /// <summary>
+        /// Aggregate drag coefficient (½·ρ_air·C_d in pixel units). Tuned so a reference
+        /// (size=1.0) drop reaches terminal velocity ≈ 350 px/sec under our gravity.
+        /// Per-drop drag = (k / size) · |v_rel| · v_rel — inversely proportional to size,
+        /// matching the real physics where small drops have higher drag-to-mass ratio.
+        /// </summary>
+        private const double DragCoefficient = 0.005;
+
+        /// <summary>
+        /// Sample trail history every Nth integration tick. With 120Hz physics and N=3,
+        /// a 4-point trail spans ~100ms of motion — enough to look like genuine motion blur
+        /// without being so long that quickly-changing wind makes the trail diverge from
+        /// the drop's actual trajectory.
+        /// </summary>
+        private const int TrailSampleInterval = 3;
+
+        /// <summary>Counter for the every-Nth-tick trail sampling.</summary>
+        private int _trailSampleCounter;
+
         /// <inheritdoc />
-        public override float Gravity => 300f;
+        public override float Gravity => 600f;
 
         /// <summary>
         /// Restitution applied when a rain drop bounces off a surface. Drops are mostly
@@ -713,11 +747,32 @@ public abstract class PhysicsComponent
         public override void ApplyForces(SceneEntity entity, float dt)
         {
             var buffer = _pool.Buffer;
+            var wind = Wind;
+            double gAccel = Gravity;
+
             for (int i = 0; i < buffer.Length; i++)
             {
                 ref var p = ref buffer[i];
                 if (p.FramesLeft <= 0) continue;
-                p.Velocity += new Vector(0, Gravity * dt);
+
+                if (p.Kind == ParticlePool.ParticleKind.RainDrop)
+                {
+                    // Real raindrop physics: gravity + air drag against (v_drop − v_wind).
+                    // Drag accel = −(k / size) · |v_rel| · v_rel.  Smaller drops decelerate
+                    // (and accelerate toward wind) faster — the population varies naturally.
+                    var vRel = p.Velocity - wind;
+                    double speed = vRel.Length;
+                    double dragOverMass = DragCoefficient / Math.Max(p.Size, 0.1f);
+
+                    p.Velocity = new Vector(
+                        p.Velocity.X - vRel.X * dragOverMass * speed * dt,
+                        p.Velocity.Y + gAccel * dt - vRel.Y * dragOverMass * speed * dt);
+                }
+                else
+                {
+                    // Sparks: gravity only (preserves original transient/burst behavior).
+                    p.Velocity = new Vector(p.Velocity.X, p.Velocity.Y + gAccel * dt);
+                }
             }
         }
 
@@ -725,12 +780,35 @@ public abstract class PhysicsComponent
         public override void Integrate(SceneEntity entity, float dt)
         {
             var buffer = _pool.Buffer;
+
+            // Trail-history sampling counter: snapshot every Nth tick so a 4-point trail
+            // covers a meaningful span of motion rather than 4 nearly-identical positions.
+            // At 120Hz physics with sample-every-3 → ~40Hz history → ~25ms between samples,
+            // so a full 4-point trail represents ~100ms of trajectory. Looks like genuine
+            // motion blur rather than a tiny fragment of the last frame.
+            _trailSampleCounter++;
+            bool sampleTrail = _trailSampleCounter >= TrailSampleInterval;
+            if (sampleTrail) _trailSampleCounter = 0;
+
             for (int i = 0; i < buffer.Length; i++)
             {
                 ref var p = ref buffer[i];
                 if (p.FramesLeft <= 0) continue;
+
+                // Snapshot pre-integration position into the trail ring (only for rain drops;
+                // sparks render as dots and don't need history).
+                if (sampleTrail && p.Kind == ParticlePool.ParticleKind.RainDrop)
+                {
+                    p.Trail3 = p.Trail2;
+                    p.Trail2 = p.Trail1;
+                    p.Trail1 = p.Trail0;
+                    p.Trail0 = p.Position;
+                    if (p.TrailLen < 4) p.TrailLen++;
+                }
+
                 p.Position += p.Velocity * dt;
             }
+
             // Lifecycle tick belongs here, not in the pool itself.
             _pool.TickLifetimes();
         }
@@ -739,11 +817,18 @@ public abstract class PhysicsComponent
         public override void ResolveCollisions(SceneEntity entity, float dt, Size viewport)
         {
             // Spark particles have no surface interaction — they fall and die at lifetime end.
-            // Rain drops bounce once off the bars (or the floor) and then die quickly.
+            // Rain drops bounce once off the bars (or the floor, or the ball) and then die quickly.
             if (Bars == null) return;
             var heights = Bars.BarHeights;
             int barCount = heights.Length;
             double colWidth = barCount > 0 ? viewport.Width / barCount : 0;
+
+            // Pre-compute ball collision geometry (cheap), used per drop below.
+            var ballPhysics = BallEntityRef?.Physics as PhysicsComponent.Ball;
+            double ballR = ballPhysics?.Radius ?? 0;
+            double ballR2 = ballR * ballR;
+            bool checkBall = BallEntityRef != null && ballPhysics != null && ballR > 0;
+            var ballPos = BallEntityRef?.Position ?? default;
 
             var buffer = _pool.Buffer;
             for (int i = 0; i < buffer.Length; i++)
@@ -751,6 +836,32 @@ public abstract class PhysicsComponent
                 ref var p = ref buffer[i];
                 if (p.FramesLeft <= 0) continue;
                 if (p.Kind != ParticlePool.ParticleKind.RainDrop) continue;
+
+                // Ball collision first (drops splash off the top of the ball before reaching bars).
+                if (checkBall)
+                {
+                    var d = p.Position - ballPos;
+                    double dist2 = d.X * d.X + d.Y * d.Y;
+                    if (dist2 <= ballR2)
+                    {
+                        if (p.BounceUsed) { p.FramesLeft = 0; continue; }
+
+                        double dist = Math.Sqrt(Math.Max(dist2, 0.0001));
+                        var normal = d / dist; // unit vector from ball center to drop
+                        // Snap drop to the ball's surface
+                        p.Position = new Point(ballPos.X + normal.X * ballR, ballPos.Y + normal.Y * ballR);
+                        // Reflect velocity through normal: v' = v - 2(v·n)n, scaled by restitution
+                        double vDotN = p.Velocity.X * normal.X + p.Velocity.Y * normal.Y;
+                        if (vDotN < 0) // only reflect if moving INTO the ball
+                        {
+                            var reflected = p.Velocity - 2 * vDotN * normal;
+                            p.Velocity = reflected * Restitution;
+                        }
+                        p.BounceUsed = true;
+                        if (p.FramesLeft > PostBounceLifetime) p.FramesLeft = PostBounceLifetime;
+                        continue; // skip bar check for this drop
+                    }
+                }
 
                 // Surface y at this drop's column (top of the tallest thing under it).
                 double surfaceY = viewport.Height; // floor as fallback
@@ -775,6 +886,14 @@ public abstract class PhysicsComponent
                 p.Position = new Point(p.Position.X, surfaceY);
                 p.Velocity = new Vector(p.Velocity.X * 0.6, -Math.Abs(p.Velocity.Y) * Restitution);
                 p.BounceUsed = true;
+
+                // Reset trail to start from the impact point — otherwise the streak would
+                // visibly cross through the bar surface in a straight line.
+                p.TrailLen = 0;
+                p.Trail0 = p.Position;
+                p.Trail1 = p.Position;
+                p.Trail2 = p.Position;
+                p.Trail3 = p.Position;
 
                 // Shrink remaining lifetime so the post-bounce trail fades out fast —
                 // the drop has "splashed" and is just briefly visible afterward.

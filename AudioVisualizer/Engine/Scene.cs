@@ -26,7 +26,7 @@ public sealed class Scene
     /// The shared particle pool entity, exposed so external code (e.g. event handlers)
     /// can spawn particles via the Spawn / SpawnBurst methods.
     /// </summary>
-    private readonly ParticlePool _particles = new(capacity: 512);
+    private readonly ParticlePool _particles = new(capacity: 1024);
 
     /// <summary>
     /// Physics accumulator for the fixed-timestep loop.

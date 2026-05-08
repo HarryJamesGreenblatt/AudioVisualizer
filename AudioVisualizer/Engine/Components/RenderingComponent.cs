@@ -267,26 +267,83 @@ public abstract class RenderingComponent
                 ref var p = ref buffer[i];
                 if (p.FramesLeft <= 0) continue;
 
-                byte alpha = (byte)Math.Clamp(p.FramesLeft * 8, 0, 255);
-                var color = Color.FromArgb(alpha, p.Color.R, p.Color.G, p.Color.B);
-
                 if (p.Kind == ParticlePool.ParticleKind.RainDrop)
                 {
-                    // Streak: short line segment along the velocity vector. Length is
-                    // proportional to speed so faster drops look longer (motion blur).
-                    var pen = new Pen(new SolidColorBrush(color), 1.2);
-                    pen.Freeze();
-                    var v = p.Velocity;
-                    double speed = v.Length;
-                    if (speed < 1) { dc.DrawEllipse(new SolidColorBrush(color), null, p.Position, 1.5, 1.5); continue; }
-                    var dir = v / speed;
-                    double streakLen = Math.Min(speed * 0.025, 18.0); // cap so very fast drops don't draw a giant line
-                    var head = p.Position;
-                    var tail = new Point(head.X - dir.X * streakLen, head.Y - dir.Y * streakLen);
-                    dc.DrawLine(pen, tail, head);
+                    // Real motion-blur trail: a polyline through the drop's actual past
+                    // positions [Trail3 → Trail2 → Trail1 → Trail0 → Position]. Each segment
+                    // has its OWN pen with falling alpha (and slightly tapered width) so the
+                    // trail reads as a streak that fades from bright head to faint tail —
+                    // the way photographic motion blur actually looks — rather than a
+                    // uniform-opacity worm.
+                    double sizeSqrt = Math.Sqrt(Math.Max(p.Size, 0.1));
+                    double headWidth = 0.6 * sizeSqrt + 0.3;          // ~0.5–1.1 px
+
+                    // Per-drop overall brightness from size (small = atmospheric, large = featured)
+                    byte sizeAlpha = (byte)Math.Clamp(p.Color.A * (0.20 + 0.55 * (p.Size / 1.8)), 0, 255);
+                    byte headAlpha = (byte)Math.Min(sizeAlpha, p.FramesLeft * 8);
+
+                    // Newest segment (head) → oldest (tail). Alpha falls off geometrically;
+                    // width tapers gently so the head feels the most "present".
+                    // Helper: draw one segment with a per-segment alpha and width multiplier.
+                    // Inlined four times because local functions can't capture `ref` locals.
+                    if (p.TrailLen >= 1)
+                    {
+                        byte segA = (byte)Math.Clamp(headAlpha * 1.00, 0, 255);
+                        if (segA >= 4)
+                        {
+                            var brush = new SolidColorBrush(Color.FromArgb(segA, p.Color.R, p.Color.G, p.Color.B));
+                            brush.Freeze();
+                            var pen = new Pen(brush, headWidth * 1.00); pen.Freeze();
+                            dc.DrawLine(pen, p.Trail0, p.Position);
+                        }
+                    }
+                    if (p.TrailLen >= 2)
+                    {
+                        byte segA = (byte)Math.Clamp(headAlpha * 0.65, 0, 255);
+                        if (segA >= 4)
+                        {
+                            var brush = new SolidColorBrush(Color.FromArgb(segA, p.Color.R, p.Color.G, p.Color.B));
+                            brush.Freeze();
+                            var pen = new Pen(brush, headWidth * 0.90); pen.Freeze();
+                            dc.DrawLine(pen, p.Trail1, p.Trail0);
+                        }
+                    }
+                    if (p.TrailLen >= 3)
+                    {
+                        byte segA = (byte)Math.Clamp(headAlpha * 0.35, 0, 255);
+                        if (segA >= 4)
+                        {
+                            var brush = new SolidColorBrush(Color.FromArgb(segA, p.Color.R, p.Color.G, p.Color.B));
+                            brush.Freeze();
+                            var pen = new Pen(brush, headWidth * 0.78); pen.Freeze();
+                            dc.DrawLine(pen, p.Trail2, p.Trail1);
+                        }
+                    }
+                    if (p.TrailLen >= 4)
+                    {
+                        byte segA = (byte)Math.Clamp(headAlpha * 0.15, 0, 255);
+                        if (segA >= 4)
+                        {
+                            var brush = new SolidColorBrush(Color.FromArgb(segA, p.Color.R, p.Color.G, p.Color.B));
+                            brush.Freeze();
+                            var pen = new Pen(brush, headWidth * 0.65); pen.Freeze();
+                            dc.DrawLine(pen, p.Trail3, p.Trail2);
+                        }
+                    }
+
+                    // Drops without enough history yet (just spawned) render as a tiny dot
+                    // at full head alpha so the spawn moment isn't invisible.
+                    if (p.TrailLen == 0)
+                    {
+                        var brush = new SolidColorBrush(Color.FromArgb(headAlpha, p.Color.R, p.Color.G, p.Color.B));
+                        brush.Freeze();
+                        dc.DrawEllipse(brush, null, p.Position, headWidth, headWidth);
+                    }
                 }
                 else
                 {
+                    byte alpha = (byte)Math.Clamp(p.FramesLeft * 8, 0, 255);
+                    var color = Color.FromArgb(alpha, p.Color.R, p.Color.G, p.Color.B);
                     var brush = new SolidColorBrush(color);
                     brush.Freeze();
                     dc.DrawEllipse(brush, null, p.Position, 2, 2);

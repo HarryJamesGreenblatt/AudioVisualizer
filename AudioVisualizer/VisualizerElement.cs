@@ -43,9 +43,13 @@ public sealed class VisualizerElement : FrameworkElement
             initialVelocity: new Vector(100, 50));
 
         // Wire the particle pool's collision physics to the bar surface so rain drops
-        // can bounce off the visible spectrum (and the floor) instead of falling forever.
+        // can bounce off the visible spectrum (and the floor) instead of falling forever,
+        // and to the ball so drops splash off it too.
         if (_scene.Particles.Physics is AudioVisualizer.Engine.Components.PhysicsComponent.Particle pp)
+        {
             pp.Bars = bars.Bars;
+            pp.BallEntityRef = ball;
+        }
 
         // Render order: bars (background) → rain (mid) → peaks → ball (foreground).
         _scene.Add(bars);

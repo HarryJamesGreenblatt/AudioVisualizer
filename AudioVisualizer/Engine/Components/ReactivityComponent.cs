@@ -108,20 +108,67 @@ public abstract class ReactivityComponent
         private readonly Entities.ParticlePool _pool;
         private double _spawnAccumulator;
 
+        // Wind state — now interpreted as the AIR'S VELOCITY (px/sec), not acceleration.
+        // Each drop's drag accelerates it toward this velocity at a rate inversely proportional
+        // to its mass, so the same wind field produces visibly different motion across the
+        // population. No more low-pass chase: the drops themselves provide the smoothing
+        // through their drag-driven velocity matching.
+        private Vector _wind;
+        private double _bassEnvelope;
+        private double _bassPrev;
+        private double _gustCooldown;
+
         /// <summary>Baseline drops per second when no audio (or silent audio) is present.</summary>
-        private const double BaselineDropsPerSecond = 80.0;
+        private const double BaselineDropsPerSecond = 220.0;
 
         /// <summary>Maximum drops per second at peak audio amplitude.</summary>
-        private const double PeakDropsPerSecond = 200.0;
+        private const double PeakDropsPerSecond = 450.0;
 
-        /// <summary>Initial downward speed of a freshly spawned drop (px/sec). Picked to look near terminal.</summary>
-        private const double SpawnSpeed = 700.0;
+        /// <summary>Drop lifetime in 120Hz physics ticks (~1.7s).</summary>
+        private const int DropLifetime = 200;
 
-        /// <summary>Random horizontal jitter on initial velocity (px/sec). Slight breeze.</summary>
-        private const double SpawnHorizontalJitter = 60.0;
+        /// <summary>Minimum size factor for spawned drops.</summary>
+        private const double SizeMin = 0.35;
 
-        /// <summary>Drop lifetime in 120Hz physics ticks (~1.5 seconds is enough to traverse a tall window).</summary>
-        private const int DropLifetime = 180;
+        /// <summary>Maximum size factor for spawned drops.</summary>
+        private const double SizeMax = 1.8;
+
+        /// <summary>
+        /// Bias exponent for the size distribution: <c>size = SizeMin + (SizeMax−SizeMin) · rand^bias</c>.
+        /// Higher = more biased toward small drops (matches real exponential-like rain DSD).
+        /// </summary>
+        private const double SizeDistributionBias = 2.5;
+
+        /// <summary>Reference gravity (matches PhysicsComponent.Particle.Gravity, used to compute spawn-velocity).</summary>
+        private const double GravityRef = 600.0;
+
+        /// <summary>Reference drag-over-mass coefficient (matches PhysicsComponent.Particle.DragCoefficient).</summary>
+        private const double DragRef = 0.005;
+
+        // Wind impulse model. Silence ⇒ still air. Bass attacks nudge the wind VELOCITY
+        // (gently, with horizontal continuity), and small drops chase it more eagerly than
+        // big drops thanks to size-dependent drag.
+
+        /// <summary>Bass intensity (smoothed) above which a gust may fire.</summary>
+        private const double GustTriggerThreshold = 0.45;
+
+        /// <summary>Minimum jump in bass intensity vs. previous frame to count as a transient.</summary>
+        private const double GustTransientDelta = 0.08;
+
+        /// <summary>Per-gust velocity nudge magnitude (px/sec) added to the wind. Compounds across hits.</summary>
+        private const double GustNudge = 60.0;
+
+        /// <summary>Maximum wind velocity magnitude (px/sec). Caps runaway accumulation.</summary>
+        private const double MaxWindMagnitude = 250.0;
+
+        /// <summary>Per-second exponential decay of wind velocity back to zero.</summary>
+        private const double WindDecay = 0.5; // ~2s time constant
+
+        /// <summary>Real-time seconds between consecutive gust triggers.</summary>
+        private const double GustCooldownSeconds = 0.18;
+
+        /// <summary>Probability that a gust on a flipped direction reverses sign (changes left/right).</summary>
+        private const double DirectionFlipProbability = 0.12;
         #endregion
 
         #region Constructor
@@ -135,16 +182,55 @@ public abstract class ReactivityComponent
         {
             if (viewport.Width <= 0 || dt <= 0) return;
 
-            // Audio amplitude (mean of all bands) drives spawn-rate intensity. With no audio,
-            // amplitude is 0 and rain falls at the baseline rate.
+            // ─── Bass envelope (for gust triggering) and broad amplitude (for spawn rate) ───
+            double bassNow = 0;
             double amplitude = 0;
             if (!bands.IsEmpty)
             {
+                int bassN = Math.Min(4, bands.Length);
+                for (int i = 0; i < bassN; i++) bassNow += bands[i];
+                bassNow /= bassN;
+
                 double sum = 0;
                 for (int i = 0; i < bands.Length; i++) sum += bands[i];
                 amplitude = Math.Clamp(sum / bands.Length, 0, 1);
             }
 
+            const double envAlpha = 0.4;
+            _bassEnvelope = (1 - envAlpha) * _bassEnvelope + envAlpha * bassNow;
+            _gustCooldown = Math.Max(0, _gustCooldown - dt);
+            double bassDelta = _bassEnvelope - _bassPrev;
+            _bassPrev = _bassEnvelope;
+
+            // ─── Gust trigger: nudge the wind VELOCITY (strictly horizontal, with direction continuity) ───
+            if (_gustCooldown <= 0 && _bassEnvelope > GustTriggerThreshold && bassDelta > GustTransientDelta)
+            {
+                int direction;
+                if (Math.Abs(_wind.X) > 1.0)
+                {
+                    direction = Math.Sign(_wind.X);
+                    if (Random.Shared.NextDouble() < DirectionFlipProbability) direction = -direction;
+                }
+                else
+                {
+                    direction = Random.Shared.NextDouble() < 0.5 ? -1 : 1;
+                }
+
+                double scale = GustNudge * Math.Min(1.0, _bassEnvelope * 1.5);
+                _wind.X += direction * scale;
+                if (Math.Abs(_wind.X) > MaxWindMagnitude)
+                    _wind.X = Math.Sign(_wind.X) * MaxWindMagnitude;
+
+                _gustCooldown = GustCooldownSeconds;
+            }
+
+            // ─── Wind exponential decay toward zero ( ambient air comes to rest if no new gusts ) ───
+            _wind *= Math.Exp(-WindDecay * dt);
+
+            if (_pool.Physics is PhysicsComponent.Particle pp)
+                pp.Wind = _wind;
+
+            // ─── Spawn drops with per-drop varied size ───
             double rate = BaselineDropsPerSecond + (PeakDropsPerSecond - BaselineDropsPerSecond) * amplitude;
             _spawnAccumulator += rate * dt;
 
@@ -152,16 +238,23 @@ public abstract class ReactivityComponent
             int toSpawn = (int)_spawnAccumulator;
             _spawnAccumulator -= toSpawn;
 
-            // Soft blue-white drop color
-            var dropColor = Color.FromArgb(180, 180, 210, 255);
+            // Soft blue-white drop color (alpha will be further modulated by size in the renderer)
+            var dropColor = Color.FromArgb(220, 180, 210, 255);
 
             for (int i = 0; i < toSpawn; i++)
             {
+                // Bias toward small drops (real rain drop-size distributions are exponential-like).
+                double sizeRand = Math.Pow(rng.NextDouble(), SizeDistributionBias);
+                float size = (float)(SizeMin + (SizeMax - SizeMin) * sizeRand);
+
+                // Spawn at the drop's natural terminal velocity (∝ √size) so it doesn't accelerate
+                // visibly after entering frame — looks like rain that's already been falling.
+                double terminalY = Math.Sqrt(GravityRef * size / DragRef);
+
                 double x = rng.NextDouble() * viewport.Width;
-                double vx = (rng.NextDouble() - 0.5) * 2 * SpawnHorizontalJitter;
-                var pos = new Point(x, -8); // start just above the viewport so streak fades in naturally
-                var vel = new Vector(vx, SpawnSpeed);
-                _pool.SpawnRainDrop(pos, vel, DropLifetime, dropColor);
+                var pos = new Point(x, -8); // start just above the viewport
+                var vel = new Vector(0, terminalY);
+                _pool.SpawnRainDrop(pos, vel, DropLifetime, dropColor, size);
             }
         }
         #endregion

@@ -64,10 +64,11 @@ public sealed class ParticlePool : SceneEntity
 
     #region Methods
     /// <summary>
-    /// Spawn a particle at the given position with velocity, lifetime, and kind.
+    /// Spawn a particle at the given position with velocity, lifetime, kind, and size.
     /// Returns false (silently) if the pool is full.
     /// </summary>
-    public bool Spawn(Point position, Vector velocity, int lifetimeFrames, Color color, ParticleKind kind = ParticleKind.Spark)
+    /// <param name="size">Relative drop/particle size in dimensionless units (1.0 = reference). Drives mass (∝ size³) and drag area (∝ size²), which together produce a per-drop terminal velocity ∝ √size and per-drop wind responsiveness ∝ 1/size.</param>
+    public bool Spawn(Point position, Vector velocity, int lifetimeFrames, Color color, ParticleKind kind = ParticleKind.Spark, float size = 1.0f)
     {
         if (_firstAvailable == -1) return false;
 
@@ -80,8 +81,15 @@ public sealed class ParticlePool : SceneEntity
         p.FramesLeft = lifetimeFrames;
         p.Color = color;
         p.Kind = kind;
+        p.Size = size;
         p.BounceUsed = false;
         p.NextFree = -1;
+        // Reset trail history so we don't carry stale points from this slot's previous life.
+        p.TrailLen = 0;
+        p.Trail0 = position;
+        p.Trail1 = position;
+        p.Trail2 = position;
+        p.Trail3 = position;
         return true;
     }
 
@@ -103,12 +111,13 @@ public sealed class ParticlePool : SceneEntity
     }
 
     /// <summary>
-    /// Spawn a single rain drop at the given position, falling with the given downward
-    /// speed. Drops are pre-flagged so the renderer streaks them along their velocity.
+    /// Spawn a single rain drop at the given position with the given size. Drops are
+    /// pre-flagged so the renderer streaks them along their velocity, and physics applies
+    /// per-drop drag based on size (smaller = more affected by wind, lower terminal velocity).
     /// </summary>
-    public bool SpawnRainDrop(Point position, Vector velocity, int lifetimeFrames, Color color)
+    public bool SpawnRainDrop(Point position, Vector velocity, int lifetimeFrames, Color color, float size = 1.0f)
     {
-        return Spawn(position, velocity, lifetimeFrames, color, ParticleKind.RainDrop);
+        return Spawn(position, velocity, lifetimeFrames, color, ParticleKind.RainDrop, size);
     }
 
     /// <summary>
@@ -173,6 +182,14 @@ public sealed class ParticlePool : SceneEntity
         /// <summary>Base render color.</summary>
         public Color Color;
 
+        /// <summary>
+        /// Relative size in dimensionless units (1.0 = reference drop). Drives per-drop
+        /// mass (∝ size³), drag area (∝ size²), and therefore terminal velocity (∝ √size)
+        /// and wind responsiveness (∝ 1/size). The visual streak width and opacity
+        /// also scale with this value.
+        /// </summary>
+        public float Size;
+
         /// <summary>Render/physics kind. See <see cref="ParticleKind"/>.</summary>
         public ParticleKind Kind;
 
@@ -181,6 +198,28 @@ public sealed class ParticlePool : SceneEntity
 
         /// <summary>Index of next free slot in the pool, or -1 if end of list / in-use.</summary>
         public int NextFree;
+
+        // ── Trail history (motion-blur rendering) ──
+        // Inline ring buffer of past positions. The renderer draws a polyline through
+        // [Trail3 → Trail2 → Trail1 → Trail0 → Position], so when the drop curves under
+        // wind, the streak naturally bends to follow the actual trajectory rather than
+        // being a rigid line locked to the current velocity vector. Sampled at integration
+        // time. Cleared on bounce so the post-bounce trail starts fresh from the impact.
+
+        /// <summary>Most recent history point (1 step before current Position).</summary>
+        public Point Trail0;
+
+        /// <summary>Second-oldest history point.</summary>
+        public Point Trail1;
+
+        /// <summary>Third-oldest history point.</summary>
+        public Point Trail2;
+
+        /// <summary>Oldest history point in the trail.</summary>
+        public Point Trail3;
+
+        /// <summary>Number of valid trail points (0–4). Grows from 0 as the drop ages.</summary>
+        public byte TrailLen;
     }
     #endregion
 }
