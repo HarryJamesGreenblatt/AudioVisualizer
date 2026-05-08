@@ -136,14 +136,16 @@ public abstract class ReactivityComponent
         /// <summary>
         /// Bias exponent for the size distribution: <c>size = SizeMin + (SizeMax−SizeMin) · rand^bias</c>.
         /// Higher = more biased toward small drops (matches real exponential-like rain DSD).
+        /// Moderate bias (2.0) keeps a realistic skew while ensuring enough medium/large drops
+        /// exist that the parallax-speed variation is clearly visible.
         /// </summary>
-        private const double SizeDistributionBias = 2.5;
+        private const double SizeDistributionBias = 2.0;
 
         /// <summary>Reference gravity (matches PhysicsComponent.Particle.Gravity, used to compute spawn-velocity).</summary>
         private const double GravityRef = 600.0;
 
-        /// <summary>Reference drag-over-mass coefficient (matches PhysicsComponent.Particle.DragCoefficient).</summary>
-        private const double DragRef = 0.005;
+        /// <summary>Reference linear drag coefficient (matches PhysicsComponent.Particle.DragCoefficient).</summary>
+        private const double DragRef = 1.714;
 
         // Wind impulse model. Silence ⇒ still air. Bass attacks nudge the wind VELOCITY
         // (gently, with horizontal continuity), and small drops chase it more eagerly than
@@ -247,9 +249,10 @@ public abstract class ReactivityComponent
                 double sizeRand = Math.Pow(rng.NextDouble(), SizeDistributionBias);
                 float size = (float)(SizeMin + (SizeMax - SizeMin) * sizeRand);
 
-                // Spawn at the drop's natural terminal velocity (∝ √size) so it doesn't accelerate
-                // visibly after entering frame — looks like rain that's already been falling.
-                double terminalY = Math.Sqrt(GravityRef * size / DragRef);
+                // Spawn at the drop's natural terminal velocity (∝ size for linear drag)
+                // so it doesn't accelerate visibly after entering frame — looks like rain
+                // that's already been falling.
+                double terminalY = GravityRef * size / DragRef;
 
                 double x = rng.NextDouble() * viewport.Width;
                 var pos = new Point(x, -8); // start just above the viewport

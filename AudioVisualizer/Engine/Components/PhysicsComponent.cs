@@ -701,12 +701,13 @@ public abstract class PhysicsComponent
         public Vector Wind { get; set; }
 
         /// <summary>
-        /// Aggregate drag coefficient (½·ρ_air·C_d in pixel units). Tuned so a reference
-        /// (size=1.0) drop reaches terminal velocity ≈ 350 px/sec under our gravity.
-        /// Per-drop drag = (k / size) · |v_rel| · v_rel — inversely proportional to size,
-        /// matching the real physics where small drops have higher drag-to-mass ratio.
+        /// Linear drag coefficient (units: 1/s). Tuned so a reference (size=1.0) drop
+        /// reaches terminal velocity ≈ 350 px/sec under our gravity.
+        /// Per-drop drag accel = −(k / size) · v_rel. Linear drag gives Vt ∝ size, producing
+        /// a wide ~5:1 speed ratio across the population — small drops drift in the background
+        /// while large drops streak past in the foreground, creating natural parallax depth.
         /// </summary>
-        private const double DragCoefficient = 0.005;
+        private const double DragCoefficient = 1.714;
 
         /// <summary>
         /// Sample trail history every Nth integration tick. With 120Hz physics and N=3,
@@ -757,16 +758,18 @@ public abstract class PhysicsComponent
 
                 if (p.Kind == ParticlePool.ParticleKind.RainDrop)
                 {
-                    // Real raindrop physics: gravity + air drag against (v_drop − v_wind).
-                    // Drag accel = −(k / size) · |v_rel| · v_rel.  Smaller drops decelerate
-                    // (and accelerate toward wind) faster — the population varies naturally.
+                    // Linear drag: accel = −(k / size) · v_rel.
+                    // Terminal velocity = g·size/k ∝ size — gives wide parallax-like speed
+                    // spread across the population. Small drops drift slowly (distant),
+                    // large drops streak fast (close). Wind is the air's velocity — each
+                    // drop accelerates toward it at rate k/size, so small drops match wind
+                    // faster than large ones.
                     var vRel = p.Velocity - wind;
-                    double speed = vRel.Length;
                     double dragOverMass = DragCoefficient / Math.Max(p.Size, 0.1f);
 
                     p.Velocity = new Vector(
-                        p.Velocity.X - vRel.X * dragOverMass * speed * dt,
-                        p.Velocity.Y + gAccel * dt - vRel.Y * dragOverMass * speed * dt);
+                        p.Velocity.X - vRel.X * dragOverMass * dt,
+                        p.Velocity.Y + gAccel * dt - vRel.Y * dragOverMass * dt);
                 }
                 else
                 {
