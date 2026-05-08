@@ -29,7 +29,8 @@ public abstract class RenderingComponent
     public sealed class Bar : RenderingComponent
     {
         private readonly ReactivityComponent.Bar _bars;
-        private readonly Brush _barBrush;
+        private readonly Color _accentColor;
+        private readonly Color _lighterColor;
 
         /// <summary>
         /// Create the renderer, reading the Windows accent color for the bar gradient.
@@ -38,11 +39,8 @@ public abstract class RenderingComponent
         {
             _bars = bars;
 
-            var accent = GetWindowsAccentColor();
-            var lighter = LightenColor(accent, 0.5f);
-
-            _barBrush = new LinearGradientBrush(accent, lighter, new Point(0, 1), new Point(0, 0));
-            _barBrush.Freeze();
+            _accentColor = GetWindowsAccentColor();
+            _lighterColor = LightenColor(_accentColor, 0.5f);
         }
 
         /// <inheritdoc />
@@ -58,16 +56,43 @@ public abstract class RenderingComponent
             double gap = Math.Max(1, barWidth * 0.15);
             double drawWidth = barWidth - gap;
 
+            // Per-band thermal luminosity: each bar glows according to its own heat —
+            // how much sustained activity its frequency region has seen recently.
+            // Cold bars are dim, hot bars blaze. No instantaneous flicker.
+            var bandHeat = _bars.BandHeat;
+
             for (int i = 0; i < barHeights.Length; i++)
             {
-                double x = i * barWidth;
                 double height = Math.Clamp(barHeights[i], 0, viewport.Height);
+                if (height <= 1) continue;
+
+                double x = i * barWidth;
                 double y = viewport.Height - height;
 
-                if (height > 1)
-                    dc.DrawRectangle(_barBrush, null, new Rect(x, y, drawWidth, height));
+                // Heat is the primary luminosity driver (0–0.75), height adds a small
+                // baseline (0.10–0.25) so even cold tall bars aren't invisible.
+                float heat = i < bandHeat.Length ? bandHeat[i] : 0f;
+                float normalizedH = (float)(height / viewport.Height);
+                float luminosity = Math.Clamp(0.10f + 0.15f * normalizedH + heat * 0.75f, 0f, 1f);
+
+                // Modulate the accent gradient colors by luminosity
+                var bottom = ScaleColor(_accentColor, luminosity);
+                var top = ScaleColor(_lighterColor, luminosity);
+                var brush = new LinearGradientBrush(bottom, top, new Point(0, 1), new Point(0, 0));
+                brush.Freeze();
+
+                dc.DrawRectangle(brush, null, new Rect(x, y, drawWidth, height));
             }
         }
+
+        /// <summary>
+        /// Scale a color's brightness by a factor (0 = black, 1 = original).
+        /// </summary>
+        private static Color ScaleColor(Color c, float factor) => Color.FromArgb(
+            c.A,
+            (byte)(c.R * factor),
+            (byte)(c.G * factor),
+            (byte)(c.B * factor));
 
         /// <summary>
         /// Read the Windows accent color from DWM, with blue fallback.
@@ -279,7 +304,7 @@ public abstract class RenderingComponent
                     double headWidth = 0.6 * sizeSqrt + 0.3;          // ~0.5–1.1 px
 
                     // Per-drop overall brightness from size (small = atmospheric, large = featured)
-                    byte sizeAlpha = (byte)Math.Clamp(p.Color.A * (0.20 + 0.55 * (p.Size / 1.8)), 0, 255);
+                    byte sizeAlpha = (byte)Math.Clamp(p.Color.A * (0.35 + 0.65 * (p.Size / 1.8)), 0, 255);
                     byte headAlpha = (byte)Math.Min(sizeAlpha, p.FramesLeft * 8);
 
                     // Newest segment (head) → oldest (tail). Alpha falls off geometrically;

@@ -32,6 +32,10 @@ public abstract class ReactivityComponent
     {
         private float _globalMax = 0.01f;
         private float[] _prevHeights = [];
+        private float[] _prevBands = [];
+        private float[] _bandHeat = [];
+        private float _energy;
+        private float _fluxMax = 0.01f;
 
         /// <summary>Scaled bar heights (pixels), updated each frame audio arrives.</summary>
         public float[] BarHeights { get; private set; } = [];
@@ -45,6 +49,21 @@ public abstract class ReactivityComponent
 
         /// <summary>Number of frequency bands being tracked.</summary>
         public int BandCount => BarHeights.Length;
+
+        /// <summary>
+        /// Smoothed spectral flux (0–1). Measures how much the frequency spectrum is
+        /// changing frame-to-frame — transient density, rhythmic activity, musical "energy".
+        /// Half-wave rectified so only onsets (new spectral content) contribute, not decays.
+        /// High during drum hits, busy passages, attacks. Near zero during sustains, silence.
+        /// </summary>
+        public float Energy => _energy;
+
+        /// <summary>
+        /// Per-band thermal charge (0–1). Each band accumulates heat from sustained
+        /// activity in its frequency region and cools down exponentially when idle.
+        /// Drives per-bar luminosity: cold bars are dim, hot bars glow bright.
+        /// </summary>
+        public float[] BandHeat => _bandHeat;
 
         /// <inheritdoc />
         public override void React(SceneEntity entity, ReadOnlySpan<float> bands, Size viewport, float dt)
@@ -63,6 +82,8 @@ public abstract class ReactivityComponent
             {
                 BarHeights = new float[bands.Length];
                 _prevHeights = new float[bands.Length];
+                _prevBands = new float[bands.Length];
+                _bandHeat = new float[bands.Length];
                 BarSurfaceVelocities = new float[bands.Length];
             }
 
@@ -90,6 +111,59 @@ public abstract class ReactivityComponent
                     _prevHeights[i] = BarHeights[i];
                 }
             }
+
+            // ─── Per-band heat: charge from activity, exponential cooldown ───
+            // Each band is like a xylophone key that glows when struck. Sustained
+            // activity keeps it hot; silence lets it cool. Drives per-bar luminosity.
+            //
+            // Frequency-dependent sensitivity: high-frequency bands have lower absolute
+            // magnitudes on mel scale, so a hi-hat trill would never glow without help.
+            // We apply a sensitivity ramp: band 0 gets 1×, band 63 gets ~3× charge rate
+            // and ~1.5× slower cooling. This lets busy high-freq content accumulate heat
+            // proportional to its perceptual activity rather than its raw magnitude.
+            const float baseChargeRate = 4.0f;
+            const float baseCooldown = 0.6f;      // seconds, time constant at band 0
+            const float sensitivityMax = 3.0f;     // charge multiplier at highest band
+            const float cooldownStretch = 1.0f;    // no extra cooling slowdown at treble
+
+            for (int i = 0; i < bands.Length; i++)
+            {
+                float t = (float)i / Math.Max(1, bands.Length - 1); // 0 at bass, 1 at treble
+                float sensitivity = 1.0f + (sensitivityMax - 1.0f) * t;
+                float cooldownTau = baseCooldown * (1.0f + (cooldownStretch - 1.0f) * t);
+
+                float coolFactor = MathF.Exp(-dt / cooldownTau);
+                float normalizedBand = bands[i] / _globalMax;
+                _bandHeat[i] = _bandHeat[i] * coolFactor + normalizedBand * baseChargeRate * sensitivity * dt;
+                _bandHeat[i] = Math.Min(_bandHeat[i], 1.0f);
+            }
+
+            // ─── Spectral flux: sum of positive band-to-band differences (onsets only) ───
+            // This measures how much NEW spectral content appeared since last frame.
+            // Unlike RMS (loudness), flux has wide dynamic range: near-zero on sustains,
+            // peaks hard on transient attacks. Normalized against a tracking max.
+            float flux = 0;
+            for (int i = 0; i < bands.Length; i++)
+            {
+                float diff = bands[i] - _prevBands[i];
+                if (diff > 0) flux += diff; // half-wave rectified: only onsets count
+                _prevBands[i] = bands[i];
+            }
+
+            // Adaptive normalization: track observed flux max (fast rise, ~1.5s decay)
+            // Fast decay lets subsequent hits reach 1.0 even if earlier ones were bigger.
+            if (flux > _fluxMax) _fluxMax = flux;
+            else _fluxMax = Math.Max(0.01f, _fluxMax * MathF.Exp(-dt / 1.5f));
+
+            float instantEnergy = Math.Clamp(flux / _fluxMax, 0f, 1f);
+
+            // Asymmetric smoothing: very fast attack (~15ms), moderate release (~150ms)
+            // so rain/luminosity respond to individual hits but don't strobe.
+            float attackAlpha = 1f - MathF.Exp(-dt / 0.015f);
+            float releaseAlpha = 1f - MathF.Exp(-dt / 0.15f);
+            float smoothAlpha = instantEnergy > _energy ? attackAlpha : releaseAlpha;
+            _energy = _energy + smoothAlpha * (instantEnergy - _energy);
+            _energy = Math.Clamp(_energy, 0f, 1f);
         }
     }
     #endregion
@@ -106,6 +180,7 @@ public abstract class ReactivityComponent
     {
         #region Fields
         private readonly Entities.ParticlePool _pool;
+        private readonly Bar _bars;
         private double _spawnAccumulator;
 
         // Wind state — now interpreted as the AIR'S VELOCITY (px/sec), not acceleration.
@@ -119,10 +194,10 @@ public abstract class ReactivityComponent
         private double _gustCooldown;
 
         /// <summary>Baseline drops per second when no audio (or silent audio) is present.</summary>
-        private const double BaselineDropsPerSecond = 220.0;
+        private const double BaselineDropsPerSecond = 80.0;
 
         /// <summary>Maximum drops per second at peak audio amplitude.</summary>
-        private const double PeakDropsPerSecond = 450.0;
+        private const double PeakDropsPerSecond = 550.0;
 
         /// <summary>Drop lifetime in 120Hz physics ticks (~1.7s).</summary>
         private const int DropLifetime = 200;
@@ -174,8 +249,8 @@ public abstract class ReactivityComponent
         #endregion
 
         #region Constructor
-        /// <summary>Create a rain emitter that spawns drops into the given pool.</summary>
-        public RainEmitter(Entities.ParticlePool pool) { _pool = pool; }
+        /// <summary>Create a rain emitter that spawns drops into the given pool, using bar energy for intensity.</summary>
+        public RainEmitter(Entities.ParticlePool pool, Bar bars) { _pool = pool; _bars = bars; }
         #endregion
 
         #region Methods
@@ -184,18 +259,13 @@ public abstract class ReactivityComponent
         {
             if (viewport.Width <= 0 || dt <= 0) return;
 
-            // ─── Bass envelope (for gust triggering) and broad amplitude (for spawn rate) ───
+            // ─── Bass envelope (for gust triggering) ───
             double bassNow = 0;
-            double amplitude = 0;
             if (!bands.IsEmpty)
             {
                 int bassN = Math.Min(4, bands.Length);
                 for (int i = 0; i < bassN; i++) bassNow += bands[i];
                 bassNow /= bassN;
-
-                double sum = 0;
-                for (int i = 0; i < bands.Length; i++) sum += bands[i];
-                amplitude = Math.Clamp(sum / bands.Length, 0, 1);
             }
 
             const double envAlpha = 0.4;
@@ -232,16 +302,17 @@ public abstract class ReactivityComponent
             if (_pool.Physics is PhysicsComponent.Particle pp)
                 pp.Wind = _wind;
 
-            // ─── Spawn drops with per-drop varied size ───
-            double rate = BaselineDropsPerSecond + (PeakDropsPerSecond - BaselineDropsPerSecond) * amplitude;
+            // ─── Spawn drops with per-drop varied size — intensity driven by smoothed energy ───
+            double energy = _bars.Energy;
+            double rate = BaselineDropsPerSecond + (PeakDropsPerSecond - BaselineDropsPerSecond) * energy;
             _spawnAccumulator += rate * dt;
 
             var rng = Random.Shared;
             int toSpawn = (int)_spawnAccumulator;
             _spawnAccumulator -= toSpawn;
 
-            // Soft blue-white drop color (alpha will be further modulated by size in the renderer)
-            var dropColor = Color.FromArgb(220, 180, 210, 255);
+            // Bright blue-white drop color (alpha will be further modulated by size in the renderer)
+            var dropColor = Color.FromArgb(255, 200, 220, 255);
 
             for (int i = 0; i < toSpawn; i++)
             {

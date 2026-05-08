@@ -14,9 +14,9 @@ namespace AudioVisualizer.Engine.Entities;
 /// </summary>
 public sealed class RainEntity : SceneEntity
 {
-    /// <summary>Construct a rain emitter that spawns drops into the given pool.</summary>
-    public RainEntity(ParticlePool pool)
+    /// <summary>Construct a rain emitter that spawns drops into the given pool, using bar energy for intensity.</summary>
+    public RainEntity(ParticlePool pool, ReactivityComponent.Bar bars)
     {
-        Reactivity = new ReactivityComponent.RainEmitter(pool);
+        Reactivity = new ReactivityComponent.RainEmitter(pool, bars);
     }
 }

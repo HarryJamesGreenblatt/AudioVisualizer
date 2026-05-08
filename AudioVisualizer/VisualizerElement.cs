@@ -97,7 +97,7 @@ public sealed class VisualizerElement : FrameworkElement
     {
         if (enabled && _rain == null)
         {
-            _rain = new RainEntity(_scene.Particles);
+            _rain = new RainEntity(_scene.Particles, _bars.Bars);
             _scene.Add(_rain);
         }
         else if (!enabled && _rain != null)
