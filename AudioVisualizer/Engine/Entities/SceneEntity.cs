@@ -68,7 +68,7 @@ public class SceneEntity
     /// <param name="viewport">Current viewport dimensions.</param>
     public virtual void Update(float dt, ReadOnlySpan<float> bands, Size viewport)
     {
-        Reactivity?.React(this, bands, viewport);
+        Reactivity?.React(this, bands, viewport, dt);
         Physics?.ApplyForces(this, dt);
         Physics?.Integrate(this, dt);
     }

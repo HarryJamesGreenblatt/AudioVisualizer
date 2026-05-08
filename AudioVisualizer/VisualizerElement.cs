@@ -35,9 +35,10 @@ public sealed class VisualizerElement : FrameworkElement
         var peaks = new PeakEntity(bars);
         var ball = new BallEntity(
             position: new Point(200, 100),
+            bars: bars,
+            peaks: peaks,
             radius: 40,
-            initialVelocity: new Vector(100, 50),
-            audioReactive: true);
+            initialVelocity: new Vector(100, 50));
 
         _scene.Add(bars);
         _scene.Add(peaks);

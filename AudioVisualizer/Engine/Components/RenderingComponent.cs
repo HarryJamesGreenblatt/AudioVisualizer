@@ -190,6 +190,10 @@ public abstract class RenderingComponent
             var pos = entity.Position;
             double radius = _physics.Radius;
 
+            // Apply rotation transform around the ball's center so stripes spin with the body.
+            // Highlight stays world-aligned (it represents a fixed light source), so we pop after wedges.
+            dc.PushTransform(new RotateTransform(_physics.Rotation, pos.X, pos.Y));
+
             int stripeCount = _stripeBrushes.Length;
             double anglePerStripe = 360.0 / stripeCount;
             for (int i = 0; i < stripeCount; i++)
@@ -201,6 +205,9 @@ public abstract class RenderingComponent
 
             dc.DrawEllipse(null, _outlinePen, pos, radius, radius);
 
+            dc.Pop();
+
+            // Highlight is rendered in world space (light source doesn't rotate with the ball)
             var highlightCenter = new Point(pos.X - radius * 0.25, pos.Y - radius * 0.25);
             dc.DrawEllipse(_highlightBrush, null, highlightCenter, radius * 0.6, radius * 0.6);
         }

@@ -12,13 +12,13 @@ public abstract class ReactivityComponent
 {
     #region Pipeline
     /// <summary>
-    /// Map incoming audio band data into entity state.
-    /// Default no-op so subclasses can opt in.
+    /// Map incoming audio band data into entity state. Default no-op so subclasses opt in.
     /// </summary>
     /// <param name="entity">The owning entity whose state may be mutated.</param>
     /// <param name="bands">Current mel-band magnitudes (may be empty if no audio).</param>
     /// <param name="viewport">Current viewport dimensions for pixel-space scaling.</param>
-    public virtual void React(SceneEntity entity, ReadOnlySpan<float> bands, Size viewport) { }
+    /// <param name="dt">Fixed physics timestep in seconds. Use this for cooldowns and continuous-force integration so behavior stays tick-rate independent.</param>
+    public virtual void React(SceneEntity entity, ReadOnlySpan<float> bands, Size viewport, float dt) { }
     #endregion
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -30,24 +30,40 @@ public abstract class ReactivityComponent
     public sealed class Bar : ReactivityComponent
     {
         private float _globalMax = 0.01f;
+        private float[] _prevHeights = [];
 
-        /// <summary>
-        /// Scaled bar heights (pixels), updated each frame audio arrives.
-        /// </summary>
+        /// <summary>Scaled bar heights (pixels), updated each frame audio arrives.</summary>
         public float[] BarHeights { get; private set; } = [];
 
         /// <summary>
-        /// Number of frequency bands being tracked.
+        /// Per-band screen-space y-velocity of the bar tops (px/sec). Negative = rising
+        /// (since +y is down on screen). Consumed by physics components colliding with
+        /// the bars to compute proper relative-velocity collision response.
         /// </summary>
+        public float[] BarSurfaceVelocities { get; private set; } = [];
+
+        /// <summary>Number of frequency bands being tracked.</summary>
         public int BandCount => BarHeights.Length;
 
         /// <inheritdoc />
-        public override void React(SceneEntity entity, ReadOnlySpan<float> bands, Size viewport)
+        public override void React(SceneEntity entity, ReadOnlySpan<float> bands, Size viewport, float dt)
         {
-            if (bands.IsEmpty) return;
+            // Even when no audio arrives, decay surface velocities toward zero so a
+            // stale spike doesn't haunt the next contact.
+            if (bands.IsEmpty)
+            {
+                float decay = MathF.Max(0f, 1f - dt * 8f); // ~125ms time constant
+                for (int i = 0; i < BarSurfaceVelocities.Length; i++)
+                    BarSurfaceVelocities[i] *= decay;
+                return;
+            }
 
             if (BarHeights.Length != bands.Length)
+            {
                 BarHeights = new float[bands.Length];
+                _prevHeights = new float[bands.Length];
+                BarSurfaceVelocities = new float[bands.Length];
+            }
 
             // Global max: instant rise, very slow decay
             float currentMax = 0.001f;
@@ -60,62 +76,17 @@ public abstract class ReactivityComponent
             float scale = (float)viewport.Height / _globalMax;
             for (int i = 0; i < bands.Length; i++)
                 BarHeights[i] = bands[i] * scale;
-        }
-    }
-    #endregion
 
-    // ─────────────────────────────────────────────────────────────────────────
-    #region Nested: Ball
-    /// <summary>
-    /// Beach-ball reactivity: bass triggers upward bounce impulses, treble adds horizontal sway.
-    /// </summary>
-    public sealed class Ball : ReactivityComponent
-    {
-        private float _bassEnergy;
-        private float _cooldown;
-
-        private const float BounceThreshold = 0.8f;
-        private const float BounceImpulse  = 400f;
-        private const float CooldownSeconds = 0.3f;
-
-        /// <inheritdoc />
-        public override void React(SceneEntity entity, ReadOnlySpan<float> bands, Size viewport)
-        {
-            // Always decay cooldown, even when no audio
-            _cooldown = Math.Max(0, _cooldown - 0.016f);
-            if (bands.IsEmpty) return;
-
-            // Bass bins (first 4)
-            float bass = 0;
-            int bassCount = Math.Min(4, bands.Length);
-            for (int i = 0; i < bassCount; i++) bass += bands[i];
-            bass /= bassCount;
-
-            _bassEnergy = Math.Max(bass, _bassEnergy * 0.9f);
-
-            if (_bassEnergy > BounceThreshold && _cooldown <= 0)
+            // Surface velocity: heights grow upward → screen-space y-velocity is the negation.
+            // Smoothed with a one-pole IIR so a single jumpy audio frame doesn't punch the ball.
+            if (dt > 0)
             {
-                var vel = entity.Velocity;
-                vel.Y -= BounceImpulse;
-                entity.Velocity = vel;
-
-                _cooldown = CooldownSeconds;
-                _bassEnergy = 0;
-            }
-
-            // Treble (last 8 bins) → horizontal sway
-            if (bands.Length > 10)
-            {
-                float treble = 0;
-                int trebleStart = bands.Length - 8;
-                for (int i = trebleStart; i < bands.Length; i++) treble += bands[i];
-                treble /= 8;
-
-                if (treble > 0.3f)
+                const float alpha = 0.4f; // weight of the new sample (0–1)
+                for (int i = 0; i < bands.Length; i++)
                 {
-                    var vel = entity.Velocity;
-                    vel.X += (Random.Shared.NextDouble() - 0.5) * treble * 200;
-                    entity.Velocity = vel;
+                    float instant = -(BarHeights[i] - _prevHeights[i]) / dt;
+                    BarSurfaceVelocities[i] = (1 - alpha) * BarSurfaceVelocities[i] + alpha * instant;
+                    _prevHeights[i] = BarHeights[i];
                 }
             }
         }
