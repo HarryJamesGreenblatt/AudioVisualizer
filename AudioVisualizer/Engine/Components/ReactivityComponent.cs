@@ -197,7 +197,7 @@ public abstract class ReactivityComponent
         private const double BaselineDropsPerSecond = 80.0;
 
         /// <summary>Maximum drops per second at peak audio amplitude.</summary>
-        private const double PeakDropsPerSecond = 550.0;
+        private const double PeakDropsPerSecond = 900.0;
 
         /// <summary>Drop lifetime in 120Hz physics ticks (~1.7s).</summary>
         private const int DropLifetime = 200;
@@ -244,8 +244,8 @@ public abstract class ReactivityComponent
         /// <summary>Real-time seconds between consecutive gust triggers.</summary>
         private const double GustCooldownSeconds = 0.18;
 
-        /// <summary>Probability that a gust on a flipped direction reverses sign (changes left/right).</summary>
-        private const double DirectionFlipProbability = 0.12;
+        /// <summary>Probability that a gust reverses direction (left↔right).</summary>
+        private const double DirectionFlipProbability = 0.40;
         #endregion
 
         #region Constructor
@@ -274,19 +274,28 @@ public abstract class ReactivityComponent
             double bassDelta = _bassEnvelope - _bassPrev;
             _bassPrev = _bassEnvelope;
 
-            // ─── Gust trigger: nudge the wind VELOCITY (strictly horizontal, with direction continuity) ───
+            // ─── Gust trigger: bass pushes rain AWAY from the low-frequency source ───
+            // Bass activity lives in the leftmost bands. We compute a spectral "center of
+            // mass" across the bottom 8 bands: if energy is concentrated left, wind blows
+            // RIGHT (pushing rain away from the source). This fills the right side naturally
+            // during bass-heavy passages instead of pulling everything toward the bass.
             if (_gustCooldown <= 0 && _bassEnvelope > GustTriggerThreshold && bassDelta > GustTransientDelta)
             {
-                int direction;
-                if (Math.Abs(_wind.X) > 1.0)
+                // Spectral center of mass over bass region (bands 0–7)
+                double weightedSum = 0, totalWeight = 0;
+                int bassRegion = Math.Min(8, bands.Length);
+                for (int i = 0; i < bassRegion; i++)
                 {
-                    direction = Math.Sign(_wind.X);
-                    if (Random.Shared.NextDouble() < DirectionFlipProbability) direction = -direction;
+                    weightedSum += i * (double)bands[i];
+                    totalWeight += bands[i];
                 }
-                else
-                {
-                    direction = Random.Shared.NextDouble() < 0.5 ? -1 : 1;
-                }
+                // center: 0 = all energy in band 0 (far left), 1 = all in band 7 (toward center)
+                double center = totalWeight > 0.001 ? weightedSum / (totalWeight * (bassRegion - 1)) : 0.5;
+
+                // Push AWAY from the energy source: energy left of center → wind blows right (+1)
+                // Small random perturbation keeps it organic.
+                int direction = center < 0.5 ? 1 : -1;
+                if (Random.Shared.NextDouble() < DirectionFlipProbability) direction = -direction;
 
                 double scale = GustNudge * Math.Min(1.0, _bassEnvelope * 1.5);
                 _wind.X += direction * scale;
