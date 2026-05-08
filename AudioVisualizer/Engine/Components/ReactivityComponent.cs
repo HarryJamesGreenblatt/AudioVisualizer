@@ -81,7 +81,7 @@ public abstract class ReactivityComponent
             // Smoothed with a one-pole IIR so a single jumpy audio frame doesn't punch the ball.
             if (dt > 0)
             {
-                const float alpha = 0.4f; // weight of the new sample (0–1)
+                const float alpha = 0.15f; // weight of the new sample (0–1); lower = smoother but laggier
                 for (int i = 0; i < bands.Length; i++)
                 {
                     float instant = -(BarHeights[i] - _prevHeights[i]) / dt;

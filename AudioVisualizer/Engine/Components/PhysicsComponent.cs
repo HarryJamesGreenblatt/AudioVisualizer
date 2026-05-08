@@ -226,14 +226,25 @@ public abstract class PhysicsComponent
 
         /// <summary>
         /// Per-second multiplicative decay applied to angular velocity (air drag on spin).
+        /// Beach balls have huge surface area for their mass — spin bleeds off quickly.
         /// </summary>
-        private const float AngularDrag = 0.5f;
+        private const float AngularDrag = 1.2f;
 
         /// <summary>
-        /// Linear drag coefficient (1/s). F_drag = -c·m·v. About 0.6 gives the same
-        /// terminal feel as the previous 1%-per-60fps multiplicative damp.
+        /// Linear (viscous / Stokes-like) drag coefficient (1/s). F = -c·m·v.
+        /// Dominant at low speeds. Higher than a dense ball would use because beach
+        /// balls have a huge cross-section relative to their mass — even slow motion
+        /// through air creates noticeable drag.
         /// </summary>
-        private const float LinearDrag = 0.6f;
+        private const float LinearDrag = 1.4f;
+
+        /// <summary>
+        /// Quadratic (form / pressure) drag coefficient (s/px). F = -c·m·|v|·v.
+        /// Dominant at high speeds. Sized to give a terminal free-fall velocity of
+        /// ~220 px/s under our 800 px/s² gravity — i.e. the ball never plummets, it
+        /// floats down like a real beach ball.
+        /// </summary>
+        private const float QuadraticDrag = 0.014f;
 
         /// <summary>
         /// Minimum closing-velocity (px/s) between ball and surface required to produce a
@@ -241,7 +252,61 @@ public abstract class PhysicsComponent
         /// of bouncing — prevents micro-jitter on resting contact and stops slow surface
         /// growth from fake-bouncing the ball.
         /// </summary>
-        private const double SurfaceBounceThreshold = 30.0;
+        private const double SurfaceBounceThreshold = 80.0;
+
+        /// <summary>
+        /// Reference closing-velocity (px/s) used to scale velocity-dependent restitution loss.
+        /// At |vRel| = this value the effective restitution is reduced by <see cref="RestitutionLossSlope"/>.
+        /// </summary>
+        private const double RestitutionLossReference = 800.0;
+
+        /// <summary>
+        /// How aggressively restitution decays with impact speed. Real materials lose more
+        /// energy on harder hits (deformation, heat). 0 = constant restitution, 1 = full loss at the reference speed.
+        /// </summary>
+        private const double RestitutionLossSlope = 0.6;
+
+        /// <summary>Floor on the velocity-attenuated restitution — stops it collapsing to 0.</summary>
+        private const double MinEffectiveRestitution = 0.15;
+
+        /// <summary>
+        /// Refractory period (seconds) after a surface bounce during which we suppress
+        /// further bounces and only depenetrate. Prevents "machine-gunning" when bars
+        /// oscillate at audio frame rate against a ball that's barely separating.
+        /// </summary>
+        private const double BounceRefractorySeconds = 0.05;
+
+        /// <summary>
+        /// Lateral kick (as fraction of ball impact velocity) applied when the ball
+        /// straddles columns of significantly different heights — simulates the contact
+        /// normal tilting away from the taller-side column. Fixes the stuck-X problem.
+        /// </summary>
+        private const double TiltedNormalKick = 0.5;
+
+        /// <summary>
+        /// Height-difference (px) between sampled columns above which the contact normal
+        /// is treated as tilted. Below this we keep the normal vertical (cheap stair-step approx).
+        /// </summary>
+        private const double NormalTiltThreshold = 6.0;
+
+        /// <summary>
+        /// Half-width of the tilt sampling window in columns. The ball spans many columns,
+        /// so one column over is too local for a sensible local slope. Sampling ±3 gives
+        /// a smoother gradient that matches the ball's actual contact patch.
+        /// </summary>
+        private const int TiltSampleHalfWidth = 3;
+
+        /// <summary>
+        /// Maximum surface y-velocity (px/s) that can be transferred into the ball during
+        /// a collision. Prevents bass-heavy spectra from punching the ball with arbitrary
+        /// momentum just because that band's bar is rapidly modulating. Saturation curve
+        /// expresses the "increase drag with amplitude" intuition: at this cap, harder hits
+        /// produce no additional outbound velocity.
+        /// </summary>
+        private const double SurfaceVelocityTransferCap = 600.0;
+
+        /// <summary>Time (seconds) since last surface bounce — supports the refractory period.</summary>
+        private double _bounceRefractory = 0.0;
 
         /// <summary>
         /// Create a beach-ball physics component. Pass a bar reactivity (and optionally peak
@@ -262,12 +327,22 @@ public abstract class PhysicsComponent
             // accumulator pattern is preserved so wind/springs/buoyancy can compose linearly later).
             AddForce(new Vector(0, Gravity * Mass));
 
-            // Linear air drag: F_drag = -c·v.  Coefficient tuned to ~1% energy loss per 60fps frame.
-            AddForce(-entity.Velocity * (LinearDrag * Mass));
+            var v = entity.Velocity;
+            double speed = v.Length;
 
-            // Angular drag stays in velocity-space (multiplicative form is numerically more
-            // stable for arbitrary dt than an exponential force).
-            AngularVelocity *= Math.Pow(1.0 - AngularDrag, dt);
+            // Linear (viscous) drag: F = -c·m·v.  Always present, dominant at low speed.
+            AddForce(-v * (LinearDrag * Mass));
+
+            // Quadratic (form) drag: F = -c·m·|v|·v.  Dominant at high speed — this is the
+            // missing piece that physically prevents the ball from being launched into orbit
+            // by a sharp bar-rise impulse.
+            if (speed > 0.01)
+                AddForce(-v * (QuadraticDrag * Mass * speed));
+
+            // Angular drag stays in velocity-space and uses the analytic exponential
+            // solution to dω/dt = -k·ω, which is well-defined for any positive coefficient
+            // (the multiplicative form Math.Pow(1-k, dt) breaks for k ≥ 1).
+            AngularVelocity *= Math.Exp(-AngularDrag * dt);
         }
 
         /// <inheritdoc />
@@ -279,9 +354,12 @@ public abstract class PhysicsComponent
         /// <inheritdoc />
         public override void ResolveCollisions(SceneEntity entity, float dt, Size viewport)
         {
+            // Refractory countdown ticks even on no-contact frames.
+            if (_bounceRefractory > 0)
+                _bounceRefractory = Math.Max(0, _bounceRefractory - dt);
+
             var pos = entity.Position;
             var vel = entity.Velocity;
-            double preBounceVx = vel.X;
             double preBounceVy = vel.Y;
 
             bool wallHit = BounceInsideViewport(ref pos, ref vel, Radius, viewport, Restitution, settleSpeed: 50);
@@ -294,17 +372,18 @@ public abstract class PhysicsComponent
             entity.Velocity = vel;
 
             // Floor / ceiling impact: transfer horizontal velocity into spin (rolling friction).
-            // omega (deg/sec) for rolling without slipping = (v / r) * (180/PI), scaled by coupling.
+            // Use POST-bounce velocity so spin direction matches actual motion direction —
+            // critical when the tilted contact normal flips the ball's horizontal velocity.
             if ((wallHit || surfaceHit) && Math.Abs(preBounceVy) > 1)
             {
-                double rollOmega = (preBounceVx / Radius) * (180.0 / Math.PI) * RollCoupling;
+                double rollOmega = (vel.X / Radius) * (180.0 / Math.PI) * RollCoupling;
                 AngularVelocity = AngularVelocity * (1 - FloorFriction) + rollOmega * FloorFriction;
             }
 
             // Side-wall impact: vertical velocity translates into spin (climbing/sliding).
-            if (wallHit && Math.Abs(preBounceVx) > 1 && (pos.X <= Radius + 0.5 || pos.X >= viewport.Width - Radius - 0.5))
+            if (wallHit && Math.Abs(vel.X) > 1 && (pos.X <= Radius + 0.5 || pos.X >= viewport.Width - Radius - 0.5))
             {
-                double wallOmega = (-preBounceVy / Radius) * (180.0 / Math.PI) * RollCoupling;
+                double wallOmega = (-vel.Y / Radius) * (180.0 / Math.PI) * RollCoupling;
                 if (pos.X <= Radius + 0.5) wallOmega = -wallOmega;
                 AngularVelocity = AngularVelocity * (1 - FloorFriction) + wallOmega * FloorFriction;
             }
@@ -316,6 +395,13 @@ public abstract class PhysicsComponent
         /// such top across all overlapping columns is the floor for this tick. The bar's
         /// own surface velocity is used for proper relative-velocity collision response
         /// (so a rising bar launches the ball, not just stops it).
+        ///
+        /// Three physical realism passes layered on the basic depenetration:
+        ///  - Velocity-dependent restitution — high-speed impacts lose more energy.
+        ///  - Tilted contact normal — when ball straddles columns of different heights, the
+        ///    bounce gains a horizontal component (otherwise the ball is stuck on the X axis).
+        ///  - Refractory period — a brief cooldown after each bounce suppresses re-bounces
+        ///    against the same surface (kills the audio-rate machine-gun effect).
         /// </summary>
         /// <returns>True if the ball was in contact with a surface this tick.</returns>
         private bool ResolveSurfaceCollision(ref Point pos, ref Vector vel, Size viewport)
@@ -327,56 +413,144 @@ public abstract class PhysicsComponent
             double colWidth = viewport.Width / heights.Length;
             if (colWidth <= 0) return false;
 
-            // Columns the ball's AABB overlaps
+            // Columns the ball's AABB overlaps (broad-phase culling)
             int firstCol = (int)Math.Floor((pos.X - Radius) / colWidth);
             int lastCol  = (int)Math.Floor((pos.X + Radius) / colWidth);
             if (firstCol < 0) firstCol = 0;
             if (lastCol  >= heights.Length) lastCol = heights.Length - 1;
             if (firstCol > lastCol) return false;
 
-            // Tallest surface in pixels (measured from the floor up) and ITS y-velocity.
-            // Heights grow upward → a positive dHeight/dt means surface moves −y on screen.
+            // Narrow-phase: for each candidate column, test the ball's actual circular
+            // contour against that column's top edge. The ball's bottom-y at horizontal
+            // offset dx is  pos.Y + sqrt(R² − dx²)  — only defined for |dx| ≤ R.
+            // The deepest-penetrating column is the true contact point; columns that the
+            // AABB grazed but the circle doesn't reach are correctly ignored.
             float tallest = 0f;
             float surfaceVy = 0f;
+            int contactCol = -1;
+            double bestPenetration = 0;
+
             var peakHeights = _peaks?.PeakHeights;
             var barVelocities = _bars.BarSurfaceVelocities;
+            double r2 = Radius * Radius;
 
             for (int i = firstCol; i <= lastCol; i++)
             {
                 float h = heights[i];
                 float vy = i < barVelocities.Length ? barVelocities[i] : 0f;
-
                 if (peakHeights != null && i < peakHeights.Length && peakHeights[i] > h)
                 {
                     h = peakHeights[i];
                     vy = 0f; // peaks don't currently expose their own surface velocity
                 }
+                if (h <= 0) continue;
 
-                if (h > tallest) { tallest = h; surfaceVy = vy; }
+                double colCenterX = (i + 0.5) * colWidth;
+                double dx = colCenterX - pos.X;
+                double dx2 = dx * dx;
+                if (dx2 > r2) continue; // circle doesn't reach this column
+
+                double ballBottomAtCol = pos.Y + Math.Sqrt(r2 - dx2);
+                double surfaceTop = viewport.Height - h;
+                double penetration = ballBottomAtCol - surfaceTop;
+                if (penetration <= 0) continue;
+
+                if (penetration > bestPenetration)
+                {
+                    bestPenetration = penetration;
+                    tallest = h;
+                    surfaceVy = vy;
+                    contactCol = i;
+                }
             }
-            if (tallest <= 0) return false;
 
-            double surfaceY = viewport.Height - tallest;
-            double ballBottom = pos.Y + Radius;
-            if (ballBottom <= surfaceY) return false; // no overlap
+            if (contactCol < 0) return false; // no actual circular overlap
 
-            // Depenetrate: snap ball to sit on the surface.
-            pos.Y = surfaceY - Radius;
+            // Depenetrate by the exact overlap measured at the contact column.
+            pos.Y -= bestPenetration;
 
-            // Relative-velocity collision response.
-            //   vRel = vBall − vSurface       (positive = closing in screen coords)
-            //   vBall_after = vSurface − R·vRel  (Newton's restitution against a moving wall)
-            // This makes a rising bar transfer its momentum into the ball, instead of zeroing
-            // the ball's velocity and "sticking" it to the bar top.
+            // Relative closing velocity along the (currently vertical) contact normal.
             double vRel = vel.Y - surfaceVy;
 
-            if (vRel > SurfaceBounceThreshold)
-                vel.Y = surfaceVy - Restitution * vRel;
-            else if (vRel > 0)
-                vel.Y = surfaceVy;   // slow contact — ride the surface, no fake bounce
-            // else: ball already moving up faster than the surface — leave it alone
+            // ---- Refractory period: just depenetrate, do NOT adopt surface velocity ----
+            // Forcing the ball to ride a fast-oscillating bar locks it to the surface.
+            if (_bounceRefractory > 0)
+                return true;
+
+            // ---- Slow contact: ride, no bounce ----
+            if (vRel <= SurfaceBounceThreshold)
+            {
+                if (vRel > 0 && Math.Abs(surfaceVy) <= SurfaceVelocityTransferCap)
+                    vel.Y = surfaceVy;
+                else if (vRel > 0)
+                    vel.Y = 0; // surface too jittery to ride; just stop the ball's descent
+                return true;
+            }
+
+            // ---- Real bounce ----
+            // Cap the surface velocity contribution to the IMPULSE only — not to the
+            // position constraint. Saturation prevents wildly oscillating bars from
+            // imparting unbounded momentum to the ball.
+            double cappedSurfaceVy = Math.Clamp(surfaceVy, -SurfaceVelocityTransferCap, SurfaceVelocityTransferCap);
+            double cappedVRel = vel.Y - cappedSurfaceVy;
+
+            // Velocity-dependent restitution: high-speed impacts deform/heat the ball,
+            // losing energy. R_eff = R * max(R_min, 1 - k·|vRel|/v_ref).
+            double rEff = Restitution * Math.Max(
+                MinEffectiveRestitution,
+                1.0 - RestitutionLossSlope * Math.Abs(cappedVRel) / RestitutionLossReference);
+
+            // Tilted contact normal on uneven columns: sample neighbors of the contact column
+            // and lean the normal away from the taller side. Lateral kick magnitude is
+            // bounded by the BALL's own impact speed (capped) — NOT the bar's velocity —
+            // so a frantically wobbling bass column can't whip the ball sideways.
+            double tiltX = ComputeNormalTiltX(heights, peakHeights, contactCol);
+            if (Math.Abs(tiltX) > 0)
+            {
+                double impactSpeed = Math.Min(Math.Abs(vel.Y) + Math.Abs(cappedSurfaceVy), SurfaceVelocityTransferCap);
+                vel.X += tiltX * impactSpeed * TiltedNormalKick;
+            }
+
+            // Vertical bounce response (relative-velocity Newton restitution).
+            vel.Y = cappedSurfaceVy - rEff * cappedVRel;
+
+            // Arm refractory period — prevents oscillating bars from re-bouncing the ball every tick.
+            _bounceRefractory = BounceRefractorySeconds;
 
             return true;
+        }
+
+        /// <summary>
+        /// Estimate the tangent of the surface tilt at the given column by sampling neighbors
+        /// a few columns out (the ball spans many columns, so a 1-column window is too local).
+        /// Sign convention: positive return = ball should bounce in +X (right), i.e. the
+        /// surface slopes downward to the right or, equivalently, is taller on the LEFT.
+        /// Returns 0 when the local slope is below <see cref="NormalTiltThreshold"/>.
+        /// </summary>
+        private static double ComputeNormalTiltX(float[] heights, float[]? peaks, int col)
+        {
+            float Sample(int i)
+            {
+                if (i < 0 || i >= heights.Length) return 0f;
+                float h = heights[i];
+                if (peaks != null && i < peaks.Length && peaks[i] > h) h = peaks[i];
+                return h;
+            }
+
+            float left = 0f, right = 0f;
+            int leftCount = 0, rightCount = 0;
+            for (int k = 1; k <= TiltSampleHalfWidth; k++)
+            {
+                if (col - k >= 0)             { left  += Sample(col - k); leftCount++; }
+                if (col + k < heights.Length) { right += Sample(col + k); rightCount++; }
+            }
+            if (leftCount == 0 || rightCount == 0) return 0;
+
+            float diff = (left / leftCount) - (right / rightCount); // positive: left is taller
+            if (Math.Abs(diff) < NormalTiltThreshold) return 0;
+
+            // Left taller → ball bounces RIGHT (+X). Normalize over a 200px reference range.
+            return Math.Clamp(diff / 200.0, -1.0, 1.0);
         }
     }
     #endregion
