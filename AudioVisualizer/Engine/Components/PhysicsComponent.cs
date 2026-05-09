@@ -693,6 +693,12 @@ public abstract class PhysicsComponent
         public SceneEntity? BallEntityRef { get; set; }
 
         /// <summary>
+        /// Optional peak physics reference for drop-vs-peak collision. When set, rain drops
+        /// collide with the higher of bar top or peak marker. Settable post-construction.
+        /// </summary>
+        public PhysicsComponent.Peak? PeaksRef { get; set; }
+
+        /// <summary>
         /// Scene-wide wind — the AIR'S velocity (px/sec). Each rain drop computes its drag
         /// against (its velocity − this wind), so smaller (lower-mass) drops accelerate to
         /// match the wind faster than larger drops, producing physically correct varied motion.
@@ -823,6 +829,7 @@ public abstract class PhysicsComponent
             // Rain drops bounce once off the bars (or the floor, or the ball) and then die quickly.
             if (Bars == null) return;
             var heights = Bars.BarHeights;
+            var peakHeights = PeaksRef?.PeakHeights;
             int barCount = heights.Length;
             double colWidth = barCount > 0 ? viewport.Width / barCount : 0;
 
@@ -873,9 +880,23 @@ public abstract class PhysicsComponent
                     int col = Math.Clamp((int)(p.Position.X / colWidth), 0, barCount - 1);
                     double barTop = viewport.Height - heights[col];
                     if (barTop < surfaceY) surfaceY = barTop;
+
+                    // Peak markers sit above bars — drops should collide with them too
+                    if (peakHeights != null && col < peakHeights.Length)
+                    {
+                        double peakTop = viewport.Height - peakHeights[col];
+                        if (peakTop < surfaceY) surfaceY = peakTop;
+                    }
                 }
 
-                if (p.Position.Y < surfaceY) continue; // not yet contacting
+                // Swept collision: check if the drop crossed the surface during this
+                // tick, not just whether it's currently below. Prevents tunneling at
+                // high velocity (large drops can move ~5 px/tick at 120Hz).
+                double prevY = p.TrailLen >= 1 ? p.Trail0.Y : p.Position.Y - p.Velocity.Y * dt;
+                bool crossed = prevY < surfaceY && p.Position.Y >= surfaceY;
+                bool below = p.Position.Y >= surfaceY;
+
+                if (!crossed && !below) continue; // not yet contacting
 
                 if (p.BounceUsed)
                 {

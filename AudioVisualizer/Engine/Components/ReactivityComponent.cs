@@ -36,6 +36,8 @@ public abstract class ReactivityComponent
         private float[] _bandHeat = [];
         private float _energy;
         private float _fluxMax = 0.01f;
+        private float _snareFlux;
+        private float _snareFluxMax = 0.01f;
 
         /// <summary>Scaled bar heights (pixels), updated each frame audio arrives.</summary>
         public float[] BarHeights { get; private set; } = [];
@@ -57,6 +59,13 @@ public abstract class ReactivityComponent
         /// High during drum hits, busy passages, attacks. Near zero during sustains, silence.
         /// </summary>
         public float Energy => _energy;
+
+        /// <summary>
+        /// Snare-band spectral flux (0–1). Isolated to mel bands 12–25 (~1–5 kHz)
+        /// where snare body + wire energy concentrates. Spikes hard on snare hits,
+        /// near-zero otherwise. Use for burst particle spawning on snare transients.
+        /// </summary>
+        public float SnareFlux => _snareFlux;
 
         /// <summary>
         /// Per-band thermal charge (0–1). Each band accumulates heat from sustained
@@ -142,11 +151,20 @@ public abstract class ReactivityComponent
             // This measures how much NEW spectral content appeared since last frame.
             // Unlike RMS (loudness), flux has wide dynamic range: near-zero on sustains,
             // peaks hard on transient attacks. Normalized against a tracking max.
+            // Snare band range: mel bands 12–25 (~1–5 kHz: snare body + wire shimmer)
+            const int snareLoB = 12;
+            const int snareHiB = 25;
+
             float flux = 0;
+            float snareRawFlux = 0;
             for (int i = 0; i < bands.Length; i++)
             {
                 float diff = bands[i] - _prevBands[i];
-                if (diff > 0) flux += diff; // half-wave rectified: only onsets count
+                if (diff > 0)
+                {
+                    flux += diff;
+                    if (i >= snareLoB && i <= snareHiB) snareRawFlux += diff;
+                }
                 _prevBands[i] = bands[i];
             }
 
@@ -156,6 +174,19 @@ public abstract class ReactivityComponent
             else _fluxMax = Math.Max(0.01f, _fluxMax * MathF.Exp(-dt / 1.5f));
 
             float instantEnergy = Math.Clamp(flux / _fluxMax, 0f, 1f);
+
+            // Snare flux: same adaptive normalization, faster decay (~0.8s) so
+            // individual snare hits reliably reach 1.0 even after a loud fill.
+            if (snareRawFlux > _snareFluxMax) _snareFluxMax = snareRawFlux;
+            else _snareFluxMax = Math.Max(0.01f, _snareFluxMax * MathF.Exp(-dt / 0.8f));
+
+            float instantSnare = Math.Clamp(snareRawFlux / _snareFluxMax, 0f, 1f);
+            // Very fast attack (~5ms), moderate release (~100ms) — snappy transient detection
+            float snareAttack = 1f - MathF.Exp(-dt / 0.005f);
+            float snareRelease = 1f - MathF.Exp(-dt / 0.10f);
+            float snareAlpha = instantSnare > _snareFlux ? snareAttack : snareRelease;
+            _snareFlux = _snareFlux + snareAlpha * (instantSnare - _snareFlux);
+            _snareFlux = Math.Clamp(_snareFlux, 0f, 1f);
 
             // Asymmetric smoothing: very fast attack (~15ms), moderate release (~150ms)
             // so rain/luminosity respond to individual hits but don't strobe.
@@ -182,6 +213,8 @@ public abstract class ReactivityComponent
         private readonly Entities.ParticlePool _pool;
         private readonly Bar _bars;
         private double _spawnAccumulator;
+        private double _snarePrevFlux;
+        private double _snareBurstCooldown;
 
         // Wind state — now interpreted as the AIR'S VELOCITY (px/sec), not acceleration.
         // Each drop's drag accelerates it toward this velocity at a rate inversely proportional
@@ -316,6 +349,24 @@ public abstract class ReactivityComponent
             double rate = BaselineDropsPerSecond + (PeakDropsPerSecond - BaselineDropsPerSecond) * energy;
             _spawnAccumulator += rate * dt;
 
+            // ─── Snare burst: detect transient onset in snare band, fire a burst ───
+            double snareNow = _bars.SnareFlux;
+            double snareDelta = snareNow - _snarePrevFlux;
+            _snarePrevFlux = snareNow;
+            _snareBurstCooldown = Math.Max(0, _snareBurstCooldown - dt);
+
+            const double snareBurstThreshold = 0.25;   // minimum flux jump to trigger
+            const double snareBurstCooldownSec = 0.08;  // prevent double-triggering
+            const int snareBurstCount = 50;             // particles per burst
+
+            bool snareFired = false;
+            if (_snareBurstCooldown <= 0 && snareDelta > snareBurstThreshold && snareNow > 0.3)
+            {
+                _snareBurstCooldown = snareBurstCooldownSec;
+                _spawnAccumulator += snareBurstCount;
+                snareFired = true;
+            }
+
             var rng = Random.Shared;
             int toSpawn = (int)_spawnAccumulator;
             _spawnAccumulator -= toSpawn;
@@ -325,8 +376,9 @@ public abstract class ReactivityComponent
 
             for (int i = 0; i < toSpawn; i++)
             {
-                // Bias toward small drops (real rain drop-size distributions are exponential-like).
-                double sizeRand = Math.Pow(rng.NextDouble(), SizeDistributionBias);
+                // Burst drops are biased larger for visual impact
+                double biasExponent = snareFired ? 1.0 : SizeDistributionBias;
+                double sizeRand = Math.Pow(rng.NextDouble(), biasExponent);
                 float size = (float)(SizeMin + (SizeMax - SizeMin) * sizeRand);
 
                 // Spawn at the drop's natural terminal velocity (∝ size for linear drag)

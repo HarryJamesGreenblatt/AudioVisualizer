@@ -50,9 +50,12 @@ public sealed class VisualizerElement : FrameworkElement
         _scene.Add(_bars);
         _scene.Add(_peaks);
 
-        // Wire the particle pool's bar reference so rain drops can collide with bars.
+        // Wire the particle pool's bar and peak references so rain drops can collide with both.
         if (_scene.Particles.Physics is AudioVisualizer.Engine.Components.PhysicsComponent.Particle pp)
+        {
             pp.Bars = _bars.Bars;
+            pp.PeaksRef = _peaks.Physics as AudioVisualizer.Engine.Components.PhysicsComponent.Peak;
+        }
 
         // Start with optional layers enabled.
         SetRain(true);
