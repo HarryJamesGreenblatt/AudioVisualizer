@@ -1,5 +1,6 @@
 using System;
 using System.Windows;
+using AudioVisualizer.Engine.Configuration;
 using AudioVisualizer.Engine.Entities;
 
 namespace AudioVisualizer.Engine.Components;
@@ -191,13 +192,16 @@ public abstract class PhysicsComponent
     // ─────────────────────────────────────────────────────────────────────────
     #region Nested: Ball
     /// <summary>
-    /// Beach-ball physics: gravity + air drag + viewport wall bouncing.
+    /// Preset-driven ball physics: gravity + air drag + viewport wall bouncing.
+    /// All per-ball-type constants come from <see cref="BallPreset"/>; collision
+    /// constants remain shared across all types.
     /// </summary>
     public sealed class Ball : PhysicsComponent
     {
-        /// <summary>
-        /// Ball radius in pixels for collision detection.
-        /// </summary>
+        /// <summary>Ball type identifier — drives rendering dispatch and game-mode progression.</summary>
+        public BallKind Kind { get; }
+
+        /// <summary>Ball radius in pixels for collision detection.</summary>
         public double Radius { get; }
 
         /// <summary>Bar reactivity providing live column heights as the floor surface.</summary>
@@ -206,45 +210,20 @@ public abstract class PhysicsComponent
         /// <summary>Optional peak physics providing additional thin floor surfaces atop the bars.</summary>
         private readonly PhysicsComponent.Peak? _peaks;
 
-        /// <inheritdoc />
-        public override float Gravity => 800f;
+        // ── Per-type physics constants (from BallPreset) ──
+        private readonly float _gravity;
+        private readonly float _restitution;
+        private readonly float _floorFriction;
+        private readonly float _rollCoupling;
+        private readonly float _angularDrag;
+        private readonly float _linearDrag;
+        private readonly float _quadraticDrag;
 
         /// <inheritdoc />
-        public override float Restitution => 0.7f;
+        public override float Gravity => _gravity;
 
-        /// <summary>
-        /// Fraction of horizontal velocity transferred into spin on each floor bounce.
-        /// 0 = frictionless ice, 1 = perfect grip. Real beach balls are around 0.5–0.7.
-        /// </summary>
-        private const float FloorFriction = 0.6f;
-
-        /// <summary>
-        /// How strongly horizontal motion induces rolling-style spin. Larger = spinnier.
-        /// Tuned so the visible stripes feel like they're tracking ground contact.
-        /// </summary>
-        private const float RollCoupling = 1.5f;
-
-        /// <summary>
-        /// Per-second multiplicative decay applied to angular velocity (air drag on spin).
-        /// Beach balls have huge surface area for their mass — spin bleeds off quickly.
-        /// </summary>
-        private const float AngularDrag = 1.2f;
-
-        /// <summary>
-        /// Linear (viscous / Stokes-like) drag coefficient (1/s). F = -c·m·v.
-        /// Dominant at low speeds. Higher than a dense ball would use because beach
-        /// balls have a huge cross-section relative to their mass — even slow motion
-        /// through air creates noticeable drag.
-        /// </summary>
-        private const float LinearDrag = 1.4f;
-
-        /// <summary>
-        /// Quadratic (form / pressure) drag coefficient (s/px). F = -c·m·|v|·v.
-        /// Dominant at high speeds. Sized to give a terminal free-fall velocity of
-        /// ~220 px/s under our 800 px/s² gravity — i.e. the ball never plummets, it
-        /// floats down like a real beach ball.
-        /// </summary>
-        private const float QuadraticDrag = 0.014f;
+        /// <inheritdoc />
+        public override float Restitution => _restitution;
 
         /// <summary>
         /// Minimum closing-velocity (px/s) between ball and surface required to produce a
@@ -309,13 +288,28 @@ public abstract class PhysicsComponent
         private double _bounceRefractory = 0.0;
 
         /// <summary>
-        /// Create a beach-ball physics component. Pass a bar reactivity (and optionally peak
-        /// physics) to make the ball collide with the visible spectrum geometry; pass null for
-        /// both to get a viewport-only beach ball.
+        /// True when the ball is in contact with the bar/peak surface this tick.
+        /// Cleared at the start of each ResolveCollisions pass; set by ResolveSurfaceCollision.
+        /// Used by game-mode anti-cheat to confirm the ball has touched the surface after release.
         /// </summary>
-        public Ball(double radius = 40, ReactivityComponent.Bar? bars = null, PhysicsComponent.Peak? peaks = null)
+        public bool HasSurfaceContact { get; private set; }
+
+        /// <summary>
+        /// Create a ball physics component from a preset. Pass a bar reactivity (and optionally
+        /// peak physics) to make the ball collide with the visible spectrum geometry.
+        /// </summary>
+        public Ball(BallPreset preset, ReactivityComponent.Bar? bars = null, PhysicsComponent.Peak? peaks = null)
         {
-            Radius = radius;
+            Kind = preset.Kind;
+            Radius = preset.Radius;
+            Mass = preset.Mass;
+            _gravity = preset.Gravity;
+            _restitution = preset.Restitution;
+            _linearDrag = preset.LinearDrag;
+            _quadraticDrag = preset.QuadraticDrag;
+            _angularDrag = preset.AngularDrag;
+            _floorFriction = preset.FloorFriction;
+            _rollCoupling = preset.RollCoupling;
             _bars = bars;
             _peaks = peaks;
         }
@@ -327,26 +321,26 @@ public abstract class PhysicsComponent
             // skip force/drag accumulation so the input component can dictate position freely.
             if (entity.IsKinematic) return;
 
-            // Gravity as a real force: F_grav = m · g (mass cancels in integration, but the
-            // accumulator pattern is preserved so wind/springs/buoyancy can compose linearly later).
+            // Gravity as a real force: F_grav = m · g (mass cancels in integration so all
+            // balls free-fall identically — the correct Galilean result).
             AddForce(new Vector(0, Gravity * Mass));
 
             var v = entity.Velocity;
             double speed = v.Length;
 
-            // Linear (viscous) drag: F = -c·m·v.  Always present, dominant at low speed.
-            AddForce(-v * (LinearDrag * Mass));
+            // Linear (viscous) drag: F = -c·v.  NOT mass-scaled — aerodynamic drag depends
+            // on shape/size, not mass. Heavier balls decelerate slower (a = F/m = -c·v/m).
+            AddForce(-v * _linearDrag);
 
-            // Quadratic (form) drag: F = -c·m·|v|·v.  Dominant at high speed — this is the
-            // missing piece that physically prevents the ball from being launched into orbit
-            // by a sharp bar-rise impulse.
+            // Quadratic (form) drag: F = -c·|v|·v.  Same principle — mass-independent force
+            // so heavy balls have higher terminal velocity naturally.
             if (speed > 0.01)
-                AddForce(-v * (QuadraticDrag * Mass * speed));
+                AddForce(-v * (_quadraticDrag * speed));
 
             // Angular drag stays in velocity-space and uses the analytic exponential
             // solution to dω/dt = -k·ω, which is well-defined for any positive coefficient
             // (the multiplicative form Math.Pow(1-k, dt) breaks for k ≥ 1).
-            AngularVelocity *= Math.Exp(-AngularDrag * dt);
+            AngularVelocity *= Math.Exp(-_angularDrag * dt);
         }
 
         /// <inheritdoc />
@@ -369,6 +363,9 @@ public abstract class PhysicsComponent
             if (_bounceRefractory > 0)
                 _bounceRefractory = Math.Max(0, _bounceRefractory - dt);
 
+            // Reset surface contact flag each tick; ResolveSurfaceCollision will set it.
+            HasSurfaceContact = false;
+
             // While being dragged, skip all collision response — the user dictates position.
             if (entity.IsKinematic) return;
 
@@ -381,6 +378,7 @@ public abstract class PhysicsComponent
             // Bar/peak collision: treat the tallest column under the ball as the floor.
             // Resolved after wall clamp so the ball is already inside the viewport.
             bool surfaceHit = ResolveSurfaceCollision(ref pos, ref vel, viewport);
+            HasSurfaceContact = surfaceHit;
 
             entity.Position = pos;
             entity.Velocity = vel;
@@ -390,16 +388,16 @@ public abstract class PhysicsComponent
             // critical when the tilted contact normal flips the ball's horizontal velocity.
             if ((wallHit || surfaceHit) && Math.Abs(preBounceVy) > 1)
             {
-                double rollOmega = (vel.X / Radius) * (180.0 / Math.PI) * RollCoupling;
-                AngularVelocity = AngularVelocity * (1 - FloorFriction) + rollOmega * FloorFriction;
+                double rollOmega = (vel.X / Radius) * (180.0 / Math.PI) * _rollCoupling;
+                AngularVelocity = AngularVelocity * (1 - _floorFriction) + rollOmega * _floorFriction;
             }
 
             // Side-wall impact: vertical velocity translates into spin (climbing/sliding).
             if (wallHit && Math.Abs(vel.X) > 1 && (pos.X <= Radius + 0.5 || pos.X >= viewport.Width - Radius - 0.5))
             {
-                double wallOmega = (-vel.Y / Radius) * (180.0 / Math.PI) * RollCoupling;
+                double wallOmega = (-vel.Y / Radius) * (180.0 / Math.PI) * _rollCoupling;
                 if (pos.X <= Radius + 0.5) wallOmega = -wallOmega;
-                AngularVelocity = AngularVelocity * (1 - FloorFriction) + wallOmega * FloorFriction;
+                AngularVelocity = AngularVelocity * (1 - _floorFriction) + wallOmega * _floorFriction;
             }
         }
 
@@ -922,6 +920,49 @@ public abstract class PhysicsComponent
                 // Shrink remaining lifetime so the post-bounce trail fades out fast —
                 // the drop has "splashed" and is just briefly visible afterward.
                 if (p.FramesLeft > PostBounceLifetime) p.FramesLeft = PostBounceLifetime;
+            }
+        }
+    }
+    #endregion
+
+    // ─────────────────────────────────────────────────────────────────────────
+    #region Nested: Goal
+    /// <summary>
+    /// Goal-zone physics: detects when a ball entity enters the goal radius and fires
+    /// the <see cref="SceneEntity.Collision"/> event to signal a stage clear.
+    /// No forces or integration — the goal is static.
+    /// </summary>
+    public sealed class Goal : PhysicsComponent
+    {
+        private readonly double _radius;
+        private readonly SceneEntity _ball;
+        private bool _triggered;
+
+        /// <summary>
+        /// When false, the goal is suppressed — no collision detection occurs.
+        /// Used by game-mode anti-cheat to hide the goal while the user drags the ball.
+        /// </summary>
+        public bool Enabled { get; set; } = true;
+
+        public Goal(double radius, SceneEntity ball)
+        {
+            _radius = radius;
+            _ball = ball;
+        }
+
+        public override void ResolveCollisions(SceneEntity entity, float dt, Size viewport)
+        {
+            if (!Enabled || _triggered || _ball == null || !_ball.IsAlive) return;
+
+            var diff = _ball.Position - entity.Position;
+            var ballPhysics = _ball.Physics as Ball;
+            double ballRadius = ballPhysics?.Radius ?? 0;
+
+            // Trigger when ball center enters the goal circle
+            if (diff.Length < _radius)
+            {
+                _triggered = true;
+                entity.NotifyCollision(new CollisionInfo(entity.Position, new Vector(0, -1), 1.0f));
             }
         }
     }

@@ -31,6 +31,10 @@
             <ui:ToggleSwitch x:Name="BallToggle" Content="Ball"
                              IsChecked="True" Margin="8,0"
                              Checked="BallToggle_Changed" Unchecked="BallToggle_Changed" />
+
+            <ui:ToggleSwitch x:Name="GameToggle" Content="Game"
+                             IsChecked="False" Margin="8,0"
+                             Checked="GameToggle_Changed" Unchecked="GameToggle_Changed" />
         </StackPanel>
     </Grid>
 </Window>

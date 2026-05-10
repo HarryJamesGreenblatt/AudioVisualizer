@@ -1,6 +1,7 @@
 using System;
 using System.Windows;
 using System.Windows.Media;
+using AudioVisualizer.Engine.Configuration;
 using AudioVisualizer.Engine.Entities;
 using Microsoft.Win32;
 
@@ -174,39 +175,99 @@ public abstract class RenderingComponent
     // ─────────────────────────────────────────────────────────────────────────
     #region Nested: Ball
     /// <summary>
-    /// Beach-ball renderer: 4 colored wedges (red, yellow, blue, white) plus a
-    /// radial highlight for a 3D effect. Reads radius from the sibling physics component.
+    /// Ball renderer that dispatches to per-type drawing methods based on <see cref="BallKind"/>.
+    /// Each ball type has its own visual identity: beach ball stripes, basketball seams,
+    /// tennis ball felt, etc. All share a common radial highlight for 3D effect.
     /// </summary>
     public sealed class Ball : RenderingComponent
     {
         private readonly PhysicsComponent.Ball _physics;
-        private readonly Brush[] _stripeBrushes;
-        private readonly Pen _outlinePen;
         private readonly RadialGradientBrush _highlightBrush;
 
-        /// <summary>
-        /// Create the renderer with classic beach ball colors.
-        /// </summary>
+        // Beach ball
+        private readonly Brush[]? _stripeBrushes;
+
+        // Basketball
+        private readonly Brush? _basketballFill;
+        private readonly Pen? _basketballSeamPen;
+
+        // Tennis ball
+        private readonly Brush? _tennisFill;
+        private readonly Pen? _tennisSeamPen;
+
+        // Soccer ball
+        private readonly Brush? _soccerFill;
+        private readonly Pen? _soccerPanelPen;
+
+        // Baseball
+        private readonly Brush? _baseballFill;
+        private readonly Pen? _baseballStitchPen;
+
+        // Racquetball
+        private readonly Brush? _racquetballFill;
+
+        // Bowling ball
+        private readonly Brush? _bowlingFill;
+        private readonly Brush? _bowlingHoleBrush;
+
+        // Shared
+        private readonly Pen _outlinePen;
+
         public Ball(PhysicsComponent.Ball physics)
         {
             _physics = physics;
-
-            _stripeBrushes = new Brush[]
-            {
-                new SolidColorBrush(Color.FromRgb(220, 50, 50)),   // Red
-                new SolidColorBrush(Color.FromRgb(255, 220, 50)),  // Yellow
-                new SolidColorBrush(Color.FromRgb(50, 120, 220)),  // Blue
-                new SolidColorBrush(Colors.White),                  // White
-            };
-            foreach (var brush in _stripeBrushes) brush.Freeze();
-
-            _outlinePen = new Pen(Brushes.White, 2);
-            _outlinePen.Freeze();
 
             _highlightBrush = new RadialGradientBrush();
             _highlightBrush.GradientStops.Add(new GradientStop(Color.FromArgb(100, 255, 255, 255), 0.0));
             _highlightBrush.GradientStops.Add(new GradientStop(Color.FromArgb(  0, 255, 255, 255), 0.7));
             _highlightBrush.Freeze();
+
+            switch (physics.Kind)
+            {
+                case BallKind.BeachBall:
+                    _stripeBrushes = new Brush[]
+                    {
+                        new SolidColorBrush(Color.FromRgb(220, 50, 50)),
+                        new SolidColorBrush(Color.FromRgb(255, 220, 50)),
+                        new SolidColorBrush(Color.FromRgb(50, 120, 220)),
+                        new SolidColorBrush(Colors.White),
+                    };
+                    foreach (var b in _stripeBrushes) b.Freeze();
+                    _outlinePen = new Pen(Brushes.White, 2); break;
+
+                case BallKind.Basketball:
+                    _basketballFill = new SolidColorBrush(Color.FromRgb(200, 100, 20)); _basketballFill.Freeze();
+                    _basketballSeamPen = new Pen(new SolidColorBrush(Color.FromRgb(40, 20, 5)), 1.5); _basketballSeamPen.Freeze();
+                    _outlinePen = new Pen(new SolidColorBrush(Color.FromRgb(60, 30, 10)), 2); break;
+
+                case BallKind.TennisBall:
+                    _tennisFill = new SolidColorBrush(Color.FromRgb(200, 220, 50)); _tennisFill.Freeze();
+                    _tennisSeamPen = new Pen(Brushes.White, 1.5); _tennisSeamPen.Freeze();
+                    _outlinePen = new Pen(new SolidColorBrush(Color.FromRgb(160, 180, 40)), 1.5); break;
+
+                case BallKind.SoccerBall:
+                    _soccerFill = Brushes.White;
+                    _soccerPanelPen = new Pen(new SolidColorBrush(Color.FromRgb(30, 30, 30)), 1.2); _soccerPanelPen.Freeze();
+                    _outlinePen = new Pen(new SolidColorBrush(Color.FromRgb(80, 80, 80)), 1.5); break;
+
+                case BallKind.Baseball:
+                    _baseballFill = new SolidColorBrush(Color.FromRgb(245, 240, 230)); _baseballFill.Freeze();
+                    _baseballStitchPen = new Pen(new SolidColorBrush(Color.FromRgb(200, 40, 40)), 1.2); _baseballStitchPen.Freeze();
+                    _outlinePen = new Pen(new SolidColorBrush(Color.FromRgb(180, 175, 165)), 1.5); break;
+
+                case BallKind.Racquetball:
+                    _racquetballFill = new SolidColorBrush(Color.FromRgb(30, 100, 220)); _racquetballFill.Freeze();
+                    _outlinePen = new Pen(new SolidColorBrush(Color.FromRgb(20, 70, 160)), 1.5); break;
+
+                case BallKind.BowlingBall:
+                    _bowlingFill = new SolidColorBrush(Color.FromRgb(25, 25, 35)); _bowlingFill.Freeze();
+                    _bowlingHoleBrush = new SolidColorBrush(Color.FromRgb(15, 15, 20)); _bowlingHoleBrush.Freeze();
+                    _outlinePen = new Pen(new SolidColorBrush(Color.FromRgb(50, 50, 60)), 2); break;
+
+                default:
+                    _outlinePen = new Pen(Brushes.White, 2); break;
+            }
+            _outlinePen.Freeze();
         }
 
         /// <inheritdoc />
@@ -215,20 +276,18 @@ public abstract class RenderingComponent
             var pos = entity.Position;
             double radius = _physics.Radius;
 
-            // Apply rotation transform around the ball's center so stripes spin with the body.
-            // Highlight stays world-aligned (it represents a fixed light source), so we pop after wedges.
             dc.PushTransform(new RotateTransform(_physics.Rotation, pos.X, pos.Y));
 
-            int stripeCount = _stripeBrushes.Length;
-            double anglePerStripe = 360.0 / stripeCount;
-            for (int i = 0; i < stripeCount; i++)
+            switch (_physics.Kind)
             {
-                double startAngle = i * anglePerStripe - 90;
-                var segment = CreateWedgeGeometry(pos, radius, startAngle, anglePerStripe);
-                dc.DrawGeometry(_stripeBrushes[i], null, segment);
+                case BallKind.BeachBall:    RenderBeachBall(dc, pos, radius); break;
+                case BallKind.Basketball:   RenderBasketball(dc, pos, radius); break;
+                case BallKind.TennisBall:   RenderTennisBall(dc, pos, radius); break;
+                case BallKind.SoccerBall:   RenderSoccerBall(dc, pos, radius); break;
+                case BallKind.Baseball:     RenderBaseball(dc, pos, radius); break;
+                case BallKind.Racquetball:  RenderRacquetball(dc, pos, radius); break;
+                case BallKind.BowlingBall:  RenderBowlingBall(dc, pos, radius); break;
             }
-
-            dc.DrawEllipse(null, _outlinePen, pos, radius, radius);
 
             dc.Pop();
 
@@ -236,6 +295,177 @@ public abstract class RenderingComponent
             var highlightCenter = new Point(pos.X - radius * 0.25, pos.Y - radius * 0.25);
             dc.DrawEllipse(_highlightBrush, null, highlightCenter, radius * 0.6, radius * 0.6);
         }
+
+        #region Per-type renderers
+
+        private void RenderBeachBall(DrawingContext dc, Point pos, double radius)
+        {
+            int stripeCount = _stripeBrushes!.Length;
+            double anglePerStripe = 360.0 / stripeCount;
+            for (int i = 0; i < stripeCount; i++)
+            {
+                double startAngle = i * anglePerStripe - 90;
+                var segment = CreateWedgeGeometry(pos, radius, startAngle, anglePerStripe);
+                dc.DrawGeometry(_stripeBrushes[i], null, segment);
+            }
+            dc.DrawEllipse(null, _outlinePen, pos, radius, radius);
+        }
+
+        private void RenderBasketball(DrawingContext dc, Point pos, double radius)
+        {
+            dc.DrawEllipse(_basketballFill, _outlinePen, pos, radius, radius);
+
+            // Horizontal seam
+            dc.DrawLine(_basketballSeamPen!, new Point(pos.X - radius * 0.9, pos.Y),
+                                             new Point(pos.X + radius * 0.9, pos.Y));
+
+            // Vertical seam (slight curve via 3-point polyline)
+            dc.DrawLine(_basketballSeamPen!, new Point(pos.X, pos.Y - radius * 0.9),
+                                             new Point(pos.X, pos.Y + radius * 0.9));
+
+            // Two curved cross-seams
+            double cx = radius * 0.55;
+            var leftArc = new PathGeometry();
+            var lf = new PathFigure { StartPoint = new Point(pos.X - cx, pos.Y - radius * 0.7), IsFilled = false };
+            lf.Segments.Add(new BezierSegment(
+                new Point(pos.X - cx * 1.6, pos.Y - radius * 0.15),
+                new Point(pos.X - cx * 1.6, pos.Y + radius * 0.15),
+                new Point(pos.X - cx, pos.Y + radius * 0.7), true));
+            leftArc.Figures.Add(lf); leftArc.Freeze();
+            dc.DrawGeometry(null, _basketballSeamPen, leftArc);
+
+            var rightArc = new PathGeometry();
+            var rf = new PathFigure { StartPoint = new Point(pos.X + cx, pos.Y - radius * 0.7), IsFilled = false };
+            rf.Segments.Add(new BezierSegment(
+                new Point(pos.X + cx * 1.6, pos.Y - radius * 0.15),
+                new Point(pos.X + cx * 1.6, pos.Y + radius * 0.15),
+                new Point(pos.X + cx, pos.Y + radius * 0.7), true));
+            rightArc.Figures.Add(rf); rightArc.Freeze();
+            dc.DrawGeometry(null, _basketballSeamPen, rightArc);
+        }
+
+        private void RenderTennisBall(DrawingContext dc, Point pos, double radius)
+        {
+            dc.DrawEllipse(_tennisFill, _outlinePen, pos, radius, radius);
+
+            // Characteristic curved seam (two mirrored S-curves)
+            double r = radius * 0.85;
+            var seam1 = new PathGeometry();
+            var f1 = new PathFigure { StartPoint = new Point(pos.X - r * 0.3, pos.Y - r), IsFilled = false };
+            f1.Segments.Add(new BezierSegment(
+                new Point(pos.X + r * 0.6, pos.Y - r * 0.3),
+                new Point(pos.X - r * 0.6, pos.Y + r * 0.3),
+                new Point(pos.X + r * 0.3, pos.Y + r), true));
+            seam1.Figures.Add(f1); seam1.Freeze();
+            dc.DrawGeometry(null, _tennisSeamPen, seam1);
+
+            var seam2 = new PathGeometry();
+            var f2 = new PathFigure { StartPoint = new Point(pos.X + r * 0.3, pos.Y - r), IsFilled = false };
+            f2.Segments.Add(new BezierSegment(
+                new Point(pos.X - r * 0.6, pos.Y - r * 0.3),
+                new Point(pos.X + r * 0.6, pos.Y + r * 0.3),
+                new Point(pos.X - r * 0.3, pos.Y + r), true));
+            seam2.Figures.Add(f2); seam2.Freeze();
+            dc.DrawGeometry(null, _tennisSeamPen, seam2);
+        }
+
+        private void RenderSoccerBall(DrawingContext dc, Point pos, double radius)
+        {
+            dc.DrawEllipse(_soccerFill, _outlinePen, pos, radius, radius);
+
+            // Central pentagon
+            DrawPentagon(dc, pos, radius * 0.35, _soccerPanelPen!, filled: true);
+
+            // Surrounding pentagons (5, evenly spaced around the edge)
+            for (int i = 0; i < 5; i++)
+            {
+                double angle = i * 72.0 - 90;
+                double rad = angle * Math.PI / 180.0;
+                var center = new Point(pos.X + radius * 0.62 * Math.Cos(rad),
+                                       pos.Y + radius * 0.62 * Math.Sin(rad));
+                DrawPentagon(dc, center, radius * 0.22, _soccerPanelPen!, filled: true);
+            }
+        }
+
+        private static void DrawPentagon(DrawingContext dc, Point center, double size, Pen pen, bool filled)
+        {
+            var geometry = new PathGeometry();
+            var figure = new PathFigure();
+            for (int i = 0; i < 5; i++)
+            {
+                double angle = (i * 72 - 90) * Math.PI / 180.0;
+                var pt = new Point(center.X + size * Math.Cos(angle), center.Y + size * Math.Sin(angle));
+                if (i == 0) figure.StartPoint = pt;
+                else figure.Segments.Add(new LineSegment(pt, true));
+            }
+            figure.IsClosed = true;
+            geometry.Figures.Add(figure);
+            geometry.Freeze();
+            dc.DrawGeometry(filled ? new SolidColorBrush(Color.FromRgb(30, 30, 30)) : null, pen, geometry);
+        }
+
+        private void RenderBaseball(DrawingContext dc, Point pos, double radius)
+        {
+            dc.DrawEllipse(_baseballFill, _outlinePen, pos, radius, radius);
+
+            // Red stitching — two mirrored C-curves
+            double r = radius * 0.75;
+            for (int side = -1; side <= 1; side += 2)
+            {
+                double ox = side * radius * 0.45;
+                var stitch = new PathGeometry();
+                var fig = new PathFigure
+                {
+                    StartPoint = new Point(pos.X + ox, pos.Y - r),
+                    IsFilled = false
+                };
+                fig.Segments.Add(new BezierSegment(
+                    new Point(pos.X + ox + side * r * 0.8, pos.Y - r * 0.35),
+                    new Point(pos.X + ox + side * r * 0.8, pos.Y + r * 0.35),
+                    new Point(pos.X + ox, pos.Y + r), true));
+                stitch.Figures.Add(fig);
+                stitch.Freeze();
+                dc.DrawGeometry(null, _baseballStitchPen, stitch);
+
+                // Stitch tick marks along the curve
+                int ticks = 6;
+                for (int t = 1; t < ticks; t++)
+                {
+                    double frac = t / (double)ticks;
+                    double ty = pos.Y - r + frac * 2 * r;
+                    double bulge = Math.Sin(frac * Math.PI) * side * r * 0.8;
+                    double tx = pos.X + ox + bulge * 0.7;
+                    double tickLen = radius * 0.08;
+                    dc.DrawLine(_baseballStitchPen!, new Point(tx - tickLen, ty - tickLen),
+                                                     new Point(tx + tickLen, ty + tickLen));
+                }
+            }
+        }
+
+        private void RenderRacquetball(DrawingContext dc, Point pos, double radius)
+        {
+            dc.DrawEllipse(_racquetballFill, _outlinePen, pos, radius, radius);
+        }
+
+        private void RenderBowlingBall(DrawingContext dc, Point pos, double radius)
+        {
+            // Dark glossy body with subtle radial gradient
+            var glossBrush = new RadialGradientBrush();
+            glossBrush.GradientOrigin = new Point(0.35, 0.35);
+            glossBrush.GradientStops.Add(new GradientStop(Color.FromRgb(60, 60, 80), 0.0));
+            glossBrush.GradientStops.Add(new GradientStop(Color.FromRgb(20, 20, 30), 1.0));
+            glossBrush.Freeze();
+            dc.DrawEllipse(glossBrush, _outlinePen, pos, radius, radius);
+
+            // Three finger holes in a triangle near the top
+            double holeR = radius * 0.1;
+            double holeY = pos.Y - radius * 0.3;
+            dc.DrawEllipse(_bowlingHoleBrush, null, new Point(pos.X - radius * 0.2, holeY), holeR, holeR);
+            dc.DrawEllipse(_bowlingHoleBrush, null, new Point(pos.X + radius * 0.2, holeY), holeR, holeR);
+            dc.DrawEllipse(_bowlingHoleBrush, null, new Point(pos.X, holeY - radius * 0.22), holeR, holeR);
+        }
+
+        #endregion
 
         /// <summary>
         /// Build a pie-slice geometry for one beach-ball stripe.
@@ -264,6 +494,59 @@ public abstract class RenderingComponent
             geometry.Figures.Add(figure);
             geometry.Freeze();
             return geometry;
+        }
+    }
+    #endregion
+
+    // ─────────────────────────────────────────────────────────────────────────
+    #region Nested: Goal
+    /// <summary>
+    /// Goal-zone renderer: draws a pulsing golden ring that the player must guide the ball into.
+    /// The pulse is time-driven (not audio-reactive) for consistent visibility.
+    /// </summary>
+    public sealed class Goal : RenderingComponent
+    {
+        private readonly double _radius;
+        private double _pulsePhase;
+
+        /// <summary>
+        /// When false, the goal is suppressed and not rendered at all.
+        /// Mirrors <see cref="PhysicsComponent.Goal.Enabled"/>.
+        /// </summary>
+        public bool Enabled { get; set; } = true;
+
+        public Goal(double radius) { _radius = radius; }
+
+        /// <inheritdoc />
+        public override void Render(SceneEntity entity, DrawingContext dc, Size viewport)
+        {
+            if (!Enabled) return;
+
+            var pos = entity.Position;
+
+            // Slow sine pulse for glow intensity
+            _pulsePhase += 0.03;
+            double pulse = 0.5 + 0.5 * Math.Sin(_pulsePhase);
+            byte glowAlpha = (byte)(40 + 50 * pulse);
+
+            // Outer glow
+            var glowPen = new Pen(new SolidColorBrush(Color.FromArgb(glowAlpha, 255, 215, 0)), 14 + 4 * pulse);
+            glowPen.Freeze();
+            dc.DrawEllipse(null, glowPen, pos, _radius, _radius);
+
+            // Inner ring
+            byte ringAlpha = (byte)(180 + 60 * pulse);
+            var ringPen = new Pen(new SolidColorBrush(Color.FromArgb(ringAlpha, 255, 215, 0)), 3);
+            ringPen.Freeze();
+            dc.DrawEllipse(null, ringPen, pos, _radius, _radius);
+
+            // Small crosshair at center
+            byte crossAlpha = (byte)(100 + 40 * pulse);
+            var crossPen = new Pen(new SolidColorBrush(Color.FromArgb(crossAlpha, 255, 215, 0)), 1);
+            crossPen.Freeze();
+            double c = 6;
+            dc.DrawLine(crossPen, new Point(pos.X - c, pos.Y), new Point(pos.X + c, pos.Y));
+            dc.DrawLine(crossPen, new Point(pos.X, pos.Y - c), new Point(pos.X, pos.Y + c));
         }
     }
     #endregion

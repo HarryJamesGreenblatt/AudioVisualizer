@@ -89,4 +89,15 @@ public partial class MainWindow : Window
 
     private void BallToggle_Changed(object sender, RoutedEventArgs e)
         => Visualizer.SetBall(BallToggle.IsChecked == true);
+
+    private void GameToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        bool enabled = GameToggle.IsChecked == true;
+        Visualizer.SetGameMode(enabled);
+
+        // When game mode is on, ensure Ball toggle is checked and disable it
+        // (ball is managed by game mode). Restore control when game mode is off.
+        BallToggle.IsChecked = enabled || Visualizer.IsBallEnabled;
+        BallToggle.IsEnabled = !enabled;
+    }
 }

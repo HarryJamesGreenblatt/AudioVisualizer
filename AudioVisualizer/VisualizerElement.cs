@@ -2,6 +2,8 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
 using AudioVisualizer.Engine;
+using AudioVisualizer.Engine.Components;
+using AudioVisualizer.Engine.Configuration;
 using AudioVisualizer.Engine.Entities;
 
 namespace AudioVisualizer;
@@ -11,7 +13,7 @@ namespace AudioVisualizer;
 /// entity set (bars, peaks, beach ball), and forwards frame ticks from the compositor.
 ///
 /// All physics/render/reactive concerns live inside the entities themselves —
-/// this class is purely a WPF↔engine bridge (frame ticks + mouse input).
+/// this class is purely a WPF↔engine bridge (frame ticks + mouse input + game mode).
 /// </summary>
 public sealed class VisualizerElement : FrameworkElement
 {
@@ -26,6 +28,20 @@ public sealed class VisualizerElement : FrameworkElement
     // Optional entities — null when their layer is toggled off.
     private RainEntity? _rain;
     private BallEntity? _ball;
+
+    // Game mode state
+    private bool _gameModeEnabled;
+    private int _currentStage;
+    private GoalEntity? _goal;
+    private float _respawnTimer;
+    private const float RespawnDelay = 0.75f; // seconds between vaporize and next ball spawn
+
+    /// <summary>
+    /// Anti-cheat: true while the goal is suppressed (invisible + untriggerable).
+    /// Set when the user grabs the ball; cleared only after the ball is released AND
+    /// has made contact with the bar/peak surface, preventing drop-in cheats.
+    /// </summary>
+    private bool _goalSuppressed;
     #endregion
 
     #region Properties
@@ -38,8 +54,19 @@ public sealed class VisualizerElement : FrameworkElement
     /// <summary>Whether the rain layer is active.</summary>
     public bool IsRainEnabled => _rain != null;
 
-    /// <summary>Whether the beach ball is active.</summary>
+    /// <summary>Whether the ball is active.</summary>
     public bool IsBallEnabled => _ball != null;
+
+    /// <summary>Whether game mode (goal + stages) is active.</summary>
+    public bool IsGameModeEnabled => _gameModeEnabled;
+
+    /// <summary>Current stage index (0-based). Only meaningful when game mode is on.</summary>
+    public int CurrentStage => _currentStage;
+
+    /// <summary>Name of the current ball type.</summary>
+    public string CurrentBallName => _currentStage < BallPreset.Stages.Length
+        ? BallPreset.Stages[_currentStage].Name
+        : "???";
     #endregion
 
     #region Constructor
@@ -81,7 +108,37 @@ public sealed class VisualizerElement : FrameworkElement
         float dt = (float)(now - _lastTick).TotalSeconds;
         _lastTick = now;
 
+        // Game mode respawn timer: after vaporizing a ball, wait before spawning the next.
+        if (_gameModeEnabled && _respawnTimer > 0 && _ball == null)
+        {
+            _respawnTimer -= dt;
+            if (_respawnTimer <= 0)
+                SpawnNextStageBall();
+        }
+
         _scene.Tick(dt, bands, new Size(ActualWidth, ActualHeight));
+
+        // Anti-cheat: suppress goal while user is dragging, re-enable after release + surface contact.
+        if (_gameModeEnabled && _goal != null && _ball != null)
+        {
+            var ballPhysics = _ball.Physics as PhysicsComponent.Ball;
+            if (_ball.IsKinematic)
+            {
+                // User is holding the ball — suppress goal immediately
+                if (!_goalSuppressed)
+                {
+                    _goalSuppressed = true;
+                    _goal.Enabled = false;
+                }
+            }
+            else if (_goalSuppressed && ballPhysics != null && ballPhysics.HasSurfaceContact)
+            {
+                // Ball has been released AND has touched the bar/peak surface — re-enable goal
+                _goalSuppressed = false;
+                _goal.Enabled = true;
+            }
+        }
+
         InvalidateVisual();
     }
 
@@ -94,7 +151,6 @@ public sealed class VisualizerElement : FrameworkElement
     #endregion
 
     #region Layer Toggles
-    /// <summary>Add or remove the peak-hold indicators.</summary>
     /// <summary>Add or remove the rain layer.</summary>
     public void SetRain(bool enabled)
     {
@@ -110,16 +166,20 @@ public sealed class VisualizerElement : FrameworkElement
         }
     }
 
-    /// <summary>Add or remove the beach ball.</summary>
+    /// <summary>Add or remove the ball (uses current stage preset when game mode is active).</summary>
     public void SetBall(bool enabled)
     {
         if (enabled && _ball == null)
         {
+            var preset = _gameModeEnabled && _currentStage < BallPreset.Stages.Length
+                ? BallPreset.Stages[_currentStage]
+                : BallPreset.Stages[0]; // default to beach ball outside game mode
+
             _ball = new BallEntity(
-                position: new Point(200, 100),
+                position: new Point(ActualWidth > 0 ? ActualWidth / 2 : 200, 100),
                 bars: _bars,
                 peaks: _peaks,
-                radius: 40,
+                preset: preset,
                 initialVelocity: new Vector(100, 50));
 
             // Let rain drops collide with the ball.
@@ -138,6 +198,153 @@ public sealed class VisualizerElement : FrameworkElement
 
             _ball = null;
         }
+    }
+    #endregion
+
+    #region Game Mode
+    /// <summary>Enable or disable game mode (goal + stage progression).</summary>
+    public void SetGameMode(bool enabled)
+    {
+        if (enabled == _gameModeEnabled) return;
+        _gameModeEnabled = enabled;
+
+        if (enabled)
+        {
+            _currentStage = 0;
+            _respawnTimer = 0;
+
+            // Ensure ball is active with stage 0 preset
+            if (_ball != null) SetBall(false);
+            SetBall(true);
+
+            // Spawn the first goal
+            SpawnGoal();
+        }
+        else
+        {
+            // Remove goal
+            if (_goal != null)
+            {
+                _scene.Remove(_goal);
+                _goal = null;
+            }
+
+            // Reset to default beach ball
+            if (_ball != null) SetBall(false);
+            _currentStage = 0;
+            SetBall(true);
+        }
+    }
+
+    /// <summary>
+    /// Compute goal position for a given stage. Early stages are lower and more
+    /// centered; later stages are higher and offset toward weaker bar regions.
+    /// </summary>
+    private Point GoalPositionForStage(int stage)
+    {
+        double w = ActualWidth > 0 ? ActualWidth : 800;
+        double h = ActualHeight > 0 ? ActualHeight : 400;
+
+        // Vertical: starts at 55% height, rises ~6% per stage, capped at 15% from top
+        double yFrac = Math.Max(0.15, 0.55 - stage * 0.06);
+
+        // Horizontal: oscillates between left-center and right-center
+        double xFrac = stage % 2 == 0 ? 0.65 : 0.35;
+
+        return new Point(w * xFrac, h * yFrac);
+    }
+
+    /// <summary>Spawn a goal entity for the current stage, watching the current ball.</summary>
+    private void SpawnGoal()
+    {
+        if (_goal != null)
+        {
+            _scene.Remove(_goal);
+            _goal = null;
+        }
+
+        if (_ball == null) return;
+
+        // Goal diameter matches ball diameter exactly
+        var preset = BallPreset.Stages[_currentStage];
+        double goalRadius = preset.Radius;
+        var pos = GoalPositionForStage(_currentStage);
+
+        _goal = new GoalEntity(pos, goalRadius, _ball);
+        _goal.Collision += OnGoalHit;
+        _goalSuppressed = false; // new goal starts enabled
+        _scene.Add(_goal);
+    }
+
+    /// <summary>Handle goal collision: vaporize current ball, advance stage, start respawn timer.</summary>
+    private void OnGoalHit(SceneEntity goal, CollisionInfo info)
+    {
+        if (_ball == null) return;
+
+        // Vaporize: particle burst from ball position with colors matching the ball
+        var ballPos = _ball.Position;
+        var ballVel = _ball.Velocity;
+        var colors = GetBallColors(_currentStage);
+        int burstCount = 120;
+        var rng = new Random();
+
+        for (int i = 0; i < burstCount; i++)
+        {
+            double angle = rng.NextDouble() * Math.PI * 2;
+            double speed = 100 + rng.NextDouble() * 300;
+            var vel = new Vector(Math.Cos(angle) * speed, Math.Sin(angle) * speed) + ballVel * 0.3;
+            var color = colors[rng.Next(colors.Length)];
+            float size = 0.5f + (float)rng.NextDouble() * 1.0f;
+            _scene.Particles.Spawn(ballPos, vel, lifetimeFrames: 40 + rng.Next(30), color, size: size);
+        }
+
+        // Mark entities dead — they'll be reaped by Scene.Tick's end-of-frame RemoveAll.
+        // We CAN'T call Scene.Remove here because this fires mid-iteration during
+        // ResolveCollisions, and mutating the entity list during foreach is undefined.
+        _ball.IsAlive = false;
+
+        // Clear ball collision reference so particle physics doesn't hold a dead ref.
+        if (_scene.Particles.Physics is AudioVisualizer.Engine.Components.PhysicsComponent.Particle pp)
+            pp.BallEntityRef = null;
+        _ball = null;
+
+        if (_goal != null)
+        {
+            _goal.IsAlive = false;
+            _goal = null;
+        }
+
+        // Advance stage
+        _currentStage++;
+        if (_currentStage >= BallPreset.Stages.Length)
+            _currentStage = 0; // wrap around (victory lap)
+
+        // Start respawn timer
+        _respawnTimer = RespawnDelay;
+    }
+
+    /// <summary>Spawn the next stage ball and goal after the respawn delay.</summary>
+    private void SpawnNextStageBall()
+    {
+        SetBall(true);
+        SpawnGoal();
+    }
+
+    /// <summary>Get representative colors for a ball type (used for vaporize particle burst).</summary>
+    private static Color[] GetBallColors(int stage)
+    {
+        var preset = stage < BallPreset.Stages.Length ? BallPreset.Stages[stage] : BallPreset.Stages[0];
+        return preset.Kind switch
+        {
+            BallKind.BeachBall   => [Color.FromRgb(220, 50, 50), Color.FromRgb(255, 220, 50), Color.FromRgb(50, 120, 220), Colors.White],
+            BallKind.Basketball  => [Color.FromRgb(200, 100, 20), Color.FromRgb(230, 130, 40), Color.FromRgb(160, 80, 15)],
+            BallKind.TennisBall  => [Color.FromRgb(200, 220, 50), Color.FromRgb(180, 200, 40), Colors.White],
+            BallKind.SoccerBall  => [Colors.White, Color.FromRgb(200, 200, 200), Color.FromRgb(30, 30, 30)],
+            BallKind.Baseball    => [Color.FromRgb(245, 240, 230), Color.FromRgb(200, 40, 40), Colors.White],
+            BallKind.Racquetball => [Color.FromRgb(30, 100, 220), Color.FromRgb(50, 130, 255), Color.FromRgb(20, 70, 180)],
+            BallKind.BowlingBall => [Color.FromRgb(40, 40, 55), Color.FromRgb(60, 60, 80), Color.FromRgb(25, 25, 35)],
+            _                    => [Colors.White],
+        };
     }
     #endregion
 
