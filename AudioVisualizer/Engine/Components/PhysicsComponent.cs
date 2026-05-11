@@ -249,6 +249,19 @@ public abstract class PhysicsComponent
         private const double MinEffectiveRestitution = 0.15;
 
         /// <summary>
+        /// Pinball-bumper boost applied on side-wall impacts. Multiplied by the ball's
+        /// closing speed to produce an inward impulse that drives the ball back into play.
+        /// Prevents the frequency-distribution bias from parking the ball against a wall.
+        /// </summary>
+        private const double WallBumperBoost = 0.6;
+
+        /// <summary>
+        /// Minimum outbound speed (px/s) the bumper guarantees on a side-wall hit.
+        /// Even a gentle drift into the wall produces at least this much kick-back.
+        /// </summary>
+        private const double WallBumperMinKick = 150.0;
+
+        /// <summary>
         /// Refractory period (seconds) after a surface bounce during which we suppress
         /// further bounces and only depenetrate. Prevents "machine-gunning" when bars
         /// oscillate at audio frame rate against a ball that's barely separating.
@@ -276,13 +289,10 @@ public abstract class PhysicsComponent
         private const int TiltSampleHalfWidth = 3;
 
         /// <summary>
-        /// Maximum surface y-velocity (px/s) that can be transferred into the ball during
-        /// a collision. Prevents bass-heavy spectra from punching the ball with arbitrary
-        /// momentum just because that band's bar is rapidly modulating. Saturation curve
-        /// expresses the "increase drag with amplitude" intuition: at this cap, harder hits
-        /// produce no additional outbound velocity.
+        /// Maximum raw surface velocity (px/s) passed into the collision formula.
+        /// Prevents wildly oscillating bars from producing unbounded impulses.
         /// </summary>
-        private const double SurfaceVelocityTransferCap = 600.0;
+        private const double SurfaceVelocityCap = 1200.0;
 
         /// <summary>Time (seconds) since last surface bounce — supports the refractory period.</summary>
         private double _bounceRefractory = 0.0;
@@ -375,6 +385,21 @@ public abstract class PhysicsComponent
 
             bool wallHit = BounceInsideViewport(ref pos, ref vel, Radius, viewport, Restitution, settleSpeed: 50);
 
+            // ── Pinball bumper on side walls ──
+            // If the ball just contacted a side wall, apply an extra inward impulse so
+            // the frequency-distribution bias doesn't park it against one edge.
+            if (wallHit)
+            {
+                bool leftWall  = pos.X <= Radius + 1.0;
+                bool rightWall = pos.X >= viewport.Width - Radius - 1.0;
+                if (leftWall || rightWall)
+                {
+                    double impactSpeed = Math.Abs(vel.X); // post-restitution speed
+                    double kick = Math.Max(impactSpeed * WallBumperBoost, WallBumperMinKick);
+                    vel.X = leftWall ? Math.Abs(vel.X) + kick : -(Math.Abs(vel.X) + kick);
+                }
+            }
+
             // Bar/peak collision: treat the tallest column under the ball as the floor.
             // Resolved after wall clamp so the ball is already inside the viewport.
             bool surfaceHit = ResolveSurfaceCollision(ref pos, ref vel, viewport);
@@ -453,7 +478,8 @@ public abstract class PhysicsComponent
                 if (peakHeights != null && i < peakHeights.Length && peakHeights[i] > h)
                 {
                     h = peakHeights[i];
-                    vy = 0f; // peaks don't currently expose their own surface velocity
+                    var peakVelocities = _peaks?.PeakSurfaceVelocities;
+                    vy = peakVelocities != null && i < peakVelocities.Length ? peakVelocities[i] : 0f;
                 }
                 if (h <= 0) continue;
 
@@ -490,9 +516,11 @@ public abstract class PhysicsComponent
                 return true;
 
             // ---- Slow contact: ride, no bounce ----
+            double cappedSurfaceVy = Math.Clamp(surfaceVy, -SurfaceVelocityCap, SurfaceVelocityCap);
+
             if (vRel <= SurfaceBounceThreshold)
             {
-                if (vRel > 0 && Math.Abs(surfaceVy) <= SurfaceVelocityTransferCap)
+                if (vRel > 0 && Math.Abs(surfaceVy) <= SurfaceVelocityCap)
                     vel.Y = surfaceVy;
                 else if (vRel > 0)
                     vel.Y = 0; // surface too jittery to ride; just stop the ball's descent
@@ -500,17 +528,23 @@ public abstract class PhysicsComponent
             }
 
             // ---- Real bounce ----
-            // Cap the surface velocity contribution to the IMPULSE only — not to the
-            // position constraint. Saturation prevents wildly oscillating bars from
-            // imparting unbounded momentum to the ball.
-            double cappedSurfaceVy = Math.Clamp(surfaceVy, -SurfaceVelocityTransferCap, SurfaceVelocityTransferCap);
+            // Newton restitution against a driven surface (the surface doesn't recoil,
+            // so no two-body mass ratio). The surface velocity is the "moving wall"
+            // reference frame; COR determines how much relative velocity is preserved.
             double cappedVRel = vel.Y - cappedSurfaceVy;
 
             // Velocity-dependent restitution: high-speed impacts deform/heat the ball,
-            // losing energy. R_eff = R * max(R_min, 1 - k·|vRel|/v_ref).
+            // losing energy. Scale the loss by (1 - restitution) so high-COR materials
+            // (rubber racquetballs) maintain their bounciness at speed, while dead
+            // materials (bowling balls, baseballs) lose energy aggressively.
+            double materialLoss = RestitutionLossSlope * (1.0 - Restitution);
             double rEff = Restitution * Math.Max(
                 MinEffectiveRestitution,
-                1.0 - RestitutionLossSlope * Math.Abs(cappedVRel) / RestitutionLossReference);
+                1.0 - materialLoss * Math.Abs(cappedVRel) / RestitutionLossReference);
+
+            // Two-body bounce: v_ball = v_surface - (1+e) * massRatio * v_rel
+            // When massRatio → 1 (surface much heavier), this reduces to Newton restitution.
+            // When masses are comparable, the surface shares more of the impulse cost.
 
             // Tilted contact normal on uneven columns: sample neighbors of the contact column
             // and lean the normal away from the taller side. Lateral kick magnitude is
@@ -519,11 +553,12 @@ public abstract class PhysicsComponent
             double tiltX = ComputeNormalTiltX(heights, peakHeights, contactCol);
             if (Math.Abs(tiltX) > 0)
             {
-                double impactSpeed = Math.Min(Math.Abs(vel.Y) + Math.Abs(cappedSurfaceVy), SurfaceVelocityTransferCap);
+                double impactSpeed = Math.Min(Math.Abs(vel.Y) + Math.Abs(cappedSurfaceVy), SurfaceVelocityCap);
                 vel.X += tiltX * impactSpeed * TiltedNormalKick;
             }
 
-            // Vertical bounce response (relative-velocity Newton restitution).
+            // Newton restitution: v_out = v_surface - e_eff * v_rel.
+            // The driven surface imparts its full velocity; COR scales the bounce.
             vel.Y = cappedSurfaceVy - rEff * cappedVRel;
 
             // Arm refractory period — prevents oscillating bars from re-bouncing the ball every tick.
@@ -580,6 +615,7 @@ public abstract class PhysicsComponent
         private float[] _peakHold = [];
         private float[] _peakVelocity = [];
         private int[] _holdTimer = [];
+        private float[] _prevPeakHold = [];
 
         private const int HoldTicks = 30;
         private const float BounceThreshold = 0.5f;
@@ -588,6 +624,13 @@ public abstract class PhysicsComponent
         /// Peak heights in pixels per band, readable by the renderer.
         /// </summary>
         public float[] PeakHeights => _peakHold;
+
+        /// <summary>
+        /// Per-band screen-space y-velocity of the peak tops (px/sec). Negative = rising.
+        /// Computed from frame-to-frame height deltas, same convention as bar surface velocities.
+        /// Consumed by ball physics for proper relative-velocity collision response against peaks.
+        /// </summary>
+        public float[] PeakSurfaceVelocities { get; private set; } = [];
 
         /// <inheritdoc />
         public override float Gravity => 0.06f;
@@ -606,9 +649,11 @@ public abstract class PhysicsComponent
             if (barHeights.Length == 0) return false;
             if (_peakHold.Length != barHeights.Length)
             {
-                _peakHold     = new float[barHeights.Length];
-                _peakVelocity = new float[barHeights.Length];
-                _holdTimer    = new int  [barHeights.Length];
+                _peakHold              = new float[barHeights.Length];
+                _peakVelocity          = new float[barHeights.Length];
+                _holdTimer             = new int  [barHeights.Length];
+                _prevPeakHold          = new float[barHeights.Length];
+                PeakSurfaceVelocities  = new float[barHeights.Length];
             }
             return true;
         }
@@ -617,6 +662,19 @@ public abstract class PhysicsComponent
         public override void ApplyForces(SceneEntity entity, float dt)
         {
             if (!EnsureBuffers()) return;
+
+            // Compute screen-space surface velocities from last tick's height changes.
+            // Surface at viewport.Height - peakHeight, so vy = -(peakHeight - prev) / dt.
+            // This runs in Phase A before the ball's Phase B collision reads it.
+            if (dt > 0)
+            {
+                for (int i = 0; i < _peakHold.Length; i++)
+                {
+                    PeakSurfaceVelocities[i] = -(_peakHold[i] - _prevPeakHold[i]) / dt;
+                    _prevPeakHold[i] = _peakHold[i];
+                }
+            }
+
             for (int i = 0; i < _peakHold.Length; i++)
             {
                 if (_holdTimer[i] > 0) _holdTimer[i]--;
