@@ -29,8 +29,8 @@ public sealed class VisualizerElement : FrameworkElement
     private RainEntity? _rain;
     private BallEntity? _ball;
 
-    // Game mode state
-    private bool _gameModeEnabled;
+    // Game mode state — always on by default.
+    private bool _gameModeEnabled = true;
     private int _currentStage;
     private GoalEntity? _goal;
     private float _respawnTimer;
@@ -84,9 +84,9 @@ public sealed class VisualizerElement : FrameworkElement
             pp.PeaksRef = _peaks.Physics as AudioVisualizer.Engine.Components.PhysicsComponent.Peak;
         }
 
-        // Start with optional layers enabled.
-        SetRain(true);
+        // Start with rain off, ball + game mode on by default.
         SetBall(true);
+        SpawnGoal();
 
         // Mouse input bridge: WPF events → Scene.Mouse. The engine never references WPF.
         Focusable = true;
