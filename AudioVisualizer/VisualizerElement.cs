@@ -196,6 +196,9 @@ public sealed class VisualizerElement : FrameworkElement
             if (_scene.Particles.Physics is AudioVisualizer.Engine.Components.PhysicsComponent.Particle pp)
                 pp.BallEntityRef = null;
 
+            // Clear ball ref on goal renderer so it stops tracking the dead ball.
+            _goal?.SetBallRef(null);
+
             _ball = null;
         }
     }
@@ -274,6 +277,10 @@ public sealed class VisualizerElement : FrameworkElement
         _goal.Collision += OnGoalHit;
         _goalSuppressed = false; // new goal starts enabled
         _scene.Add(_goal);
+
+        // Wire gravitational attraction: ball physics pulls toward goal.
+        if (_ball?.Physics is PhysicsComponent.Ball ballPhys)
+            ballPhys.GoalEntityRef = _goal;
     }
 
     /// <summary>Handle goal collision: vaporize current ball, advance stage, start respawn timer.</summary>

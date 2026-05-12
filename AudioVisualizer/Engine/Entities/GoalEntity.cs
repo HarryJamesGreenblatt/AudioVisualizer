@@ -36,8 +36,16 @@ public sealed class GoalEntity : SceneEntity
         Position = position;
         Radius = radius;
         _goalPhysics = new PhysicsComponent.Goal(radius, ball);
-        _goalRendering = new RenderingComponent.Goal(radius);
+        _goalRendering = new RenderingComponent.Goal(radius) { BallRef = ball };
         Physics   = _goalPhysics;
         Rendering = _goalRendering;
+    }
+
+    /// <summary>
+    /// Update the ball reference on the goal's renderer (e.g. after ball respawn).
+    /// </summary>
+    public void SetBallRef(SceneEntity? ball)
+    {
+        _goalRendering.BallRef = ball;
     }
 }

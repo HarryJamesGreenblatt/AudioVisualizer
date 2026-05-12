@@ -515,6 +515,25 @@ public abstract class RenderingComponent
         /// </summary>
         public bool Enabled { get; set; } = true;
 
+        /// <summary>
+        /// Reference to the ball entity. When set and alive, the goal ring shifts
+        /// slightly toward the ball each frame — a visual "gravitational lean" that
+        /// animates the attraction and makes the ring feel alive.
+        /// </summary>
+        public SceneEntity? BallRef { get; set; }
+
+        /// <summary>Maximum visual offset (px) the goal can shift toward the ball.</summary>
+        private const double MaxVisualOffset = 12.0;
+
+        /// <summary>Distance (px) at which the offset reaches maximum. Closer = capped.</summary>
+        private const double OffsetSoftening = 80.0;
+
+        /// <summary>Per-frame exponential lerp factor for smooth offset transitions.</summary>
+        private const double OffsetLerpRate = 0.08;
+
+        /// <summary>Smoothed visual offset applied to the rendered position.</summary>
+        private Vector _visualOffset;
+
         public Goal(double radius) { _radius = radius; }
 
         /// <inheritdoc />
@@ -522,7 +541,23 @@ public abstract class RenderingComponent
         {
             if (!Enabled) return;
 
-            var pos = entity.Position;
+            // Compute visual offset toward ball (gravitational lean).
+            // The goal's actual Position stays fixed for collision; only the
+            // rendered position shifts, giving the ring a subtle living motion.
+            Vector targetOffset = default;
+            if (BallRef is { IsAlive: true })
+            {
+                var diff = BallRef.Position - entity.Position;
+                double dist = diff.Length;
+                if (dist > 1.0)
+                {
+                    double magnitude = Math.Min(MaxVisualOffset,
+                                                MaxVisualOffset * OffsetSoftening / dist);
+                    targetOffset = (diff / dist) * magnitude;
+                }
+            }
+            _visualOffset += (targetOffset - _visualOffset) * OffsetLerpRate;
+            var pos = entity.Position + _visualOffset;
 
             // Slow sine pulse for glow intensity
             _pulsePhase += 0.03;

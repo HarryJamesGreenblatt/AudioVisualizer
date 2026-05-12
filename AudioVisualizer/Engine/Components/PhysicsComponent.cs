@@ -294,6 +294,14 @@ public abstract class PhysicsComponent
         /// </summary>
         private const double SurfaceVelocityCap = 1200.0;
 
+        /// <summary>
+        /// Reference mass at which the surface fully couples to the ball (1:1 velocity
+        /// transfer). Balls heavier than this receive proportionally less impulse from
+        /// surface strikes — a bowling ball (mass 15) shrugs off a peak hit that would
+        /// launch a beach ball (mass 1). Coupling factor = RefMass / max(Mass, RefMass).
+        /// </summary>
+        private const double SurfaceCouplingRefMass = 8.0;
+
         /// <summary>Time (seconds) since last surface bounce — supports the refractory period.</summary>
         private double _bounceRefractory = 0.0;
 
@@ -303,6 +311,28 @@ public abstract class PhysicsComponent
         /// Used by game-mode anti-cheat to confirm the ball has touched the surface after release.
         /// </summary>
         public bool HasSurfaceContact { get; private set; }
+
+        /// <summary>
+        /// Reference to the active goal entity. When set, alive, and enabled, the ball
+        /// experiences a spring-like attraction toward the goal — force proportional to
+        /// distance so it's weak near the goal (no suction) but strong when the ball
+        /// drifts far away (corrects the rightward spectrum-slope bias).
+        /// </summary>
+        public SceneEntity? GoalEntityRef { get; set; }
+
+        /// <summary>
+        /// Linear spring constant (px/s² per px of distance). The attraction
+        /// acceleration is <c>k · dist</c>, so force is zero at the goal and grows
+        /// linearly with distance — a restoring spring, not a gravity well.
+        /// </summary>
+        private const double GoalAttractionK = 0.25;
+
+        /// <summary>
+        /// Maximum acceleration (px/s²) the goal attraction can produce, reached
+        /// at dist = MaxAccel / K ≈ 480 px. Beyond that, the pull is constant.
+        /// ~15% of gravity — enough to steer, never enough to dominate.
+        /// </summary>
+        private const double GoalAttractionMaxAccel = 120.0;
 
         /// <summary>
         /// Create a ball physics component from a preset. Pass a bar reactivity (and optionally
@@ -346,6 +376,22 @@ public abstract class PhysicsComponent
             // so heavy balls have higher terminal velocity naturally.
             if (speed > 0.01)
                 AddForce(-v * (_quadraticDrag * speed));
+
+            // Gravitational attraction toward the active goal — a linear spring
+            // (force ∝ distance) that corrects the rightward drift from the spectrum slope.
+            // Weak near the goal (no suction), strong when far away (pulls the ball back).
+            // Only active when the goal is visible (respects anti-cheat suppression).
+            if (GoalEntityRef is GoalEntity { Enabled: true, IsAlive: true } goalEnt)
+            {
+                var diff = goalEnt.Position - entity.Position;
+                double dist = diff.Length;
+                if (dist > 1.0)
+                {
+                    double accel = Math.Min(GoalAttractionMaxAccel, GoalAttractionK * dist);
+                    var direction = diff / dist;
+                    AddForce(direction * (accel * Mass));
+                }
+            }
 
             // Angular drag stays in velocity-space and uses the analytic exponential
             // solution to dω/dt = -k·ω, which is well-defined for any positive coefficient
@@ -518,10 +564,14 @@ public abstract class PhysicsComponent
             // ---- Slow contact: ride, no bounce ----
             double cappedSurfaceVy = Math.Clamp(surfaceVy, -SurfaceVelocityCap, SurfaceVelocityCap);
 
+            // Mass-dependent surface coupling: light balls fully adopt the surface velocity;
+            // heavy balls resist (a peak can't fling a bowling ball like a beach ball).
+            double coupling = SurfaceCouplingRefMass / Math.Max(Mass, SurfaceCouplingRefMass);
+
             if (vRel <= SurfaceBounceThreshold)
             {
                 if (vRel > 0 && Math.Abs(surfaceVy) <= SurfaceVelocityCap)
-                    vel.Y = surfaceVy;
+                    vel.Y = vel.Y + (surfaceVy - vel.Y) * coupling;
                 else if (vRel > 0)
                     vel.Y = 0; // surface too jittery to ride; just stop the ball's descent
                 return true;
@@ -531,7 +581,10 @@ public abstract class PhysicsComponent
             // Newton restitution against a driven surface (the surface doesn't recoil,
             // so no two-body mass ratio). The surface velocity is the "moving wall"
             // reference frame; COR determines how much relative velocity is preserved.
-            double cappedVRel = vel.Y - cappedSurfaceVy;
+            // Surface velocity is attenuated by mass coupling so heavy balls absorb
+            // less momentum from the strike.
+            double effectiveSurfaceVy = cappedSurfaceVy * coupling;
+            double cappedVRel = vel.Y - effectiveSurfaceVy;
 
             // Velocity-dependent restitution: high-speed impacts deform/heat the ball,
             // losing energy. Scale the loss by (1 - restitution) so high-COR materials
@@ -550,16 +603,17 @@ public abstract class PhysicsComponent
             // and lean the normal away from the taller side. Lateral kick magnitude is
             // bounded by the BALL's own impact speed (capped) — NOT the bar's velocity —
             // so a frantically wobbling bass column can't whip the ball sideways.
+            // Kick is also attenuated by mass coupling so heavy balls resist lateral deflection.
             double tiltX = ComputeNormalTiltX(heights, peakHeights, contactCol);
             if (Math.Abs(tiltX) > 0)
             {
-                double impactSpeed = Math.Min(Math.Abs(vel.Y) + Math.Abs(cappedSurfaceVy), SurfaceVelocityCap);
-                vel.X += tiltX * impactSpeed * TiltedNormalKick;
+                double impactSpeed = Math.Min(Math.Abs(vel.Y) + Math.Abs(effectiveSurfaceVy), SurfaceVelocityCap);
+                vel.X += tiltX * impactSpeed * TiltedNormalKick * coupling;
             }
 
             // Newton restitution: v_out = v_surface - e_eff * v_rel.
-            // The driven surface imparts its full velocity; COR scales the bounce.
-            vel.Y = cappedSurfaceVy - rEff * cappedVRel;
+            // The driven surface imparts its (mass-coupled) velocity; COR scales the bounce.
+            vel.Y = effectiveSurfaceVy - rEff * cappedVRel;
 
             // Arm refractory period — prevents oscillating bars from re-bouncing the ball every tick.
             _bounceRefractory = BounceRefractorySeconds;
