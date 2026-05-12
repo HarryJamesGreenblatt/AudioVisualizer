@@ -1,14 +1,14 @@
 using NWaves.Transforms;
 using NWaves.Windows;
 
-namespace AudioVisualizer.Processing;
+namespace AudioVisualizer.Services;
 
 /// <summary>
 /// Converts PCM float samples into a mel-scale frequency magnitude spectrum using NWaves.
 /// Mel-scale maps FFT bins the way human hearing perceives frequency — more resolution
 /// in bass/mids, less in high treble — giving a much more natural-looking visualizer.
 /// </summary>
-public sealed class FftProcessor
+public sealed class FftProcessingService
 {
     #region Fields
     /// <summary>
@@ -78,7 +78,7 @@ public sealed class FftProcessor
     /// <param name="fftSize">Must be a power of 2. 2048 is a good default.</param>
     /// <param name="bandCount">Number of mel-spaced output bands.</param>
     /// <param name="sampleRate">Sample rate of the capture device (typically 44100 or 48000).</param>
-    public FftProcessor(int fftSize = 2048, int bandCount = 64, int sampleRate = 44100)
+    public FftProcessingService(int fftSize = 2048, int bandCount = 64, int sampleRate = 44100)
     {
         _fftSize    = fftSize;
         _sampleRate = sampleRate;

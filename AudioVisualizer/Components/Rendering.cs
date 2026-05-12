@@ -1,24 +1,24 @@
 using System;
 using System.Windows;
 using System.Windows.Media;
-using AudioVisualizer.Engine.Configuration;
-using AudioVisualizer.Engine.Entities;
+using AudioVisualizer.Configuration;
+using AudioVisualizer.Entities;
 using Microsoft.Win32;
 
-namespace AudioVisualizer.Engine.Components;
+namespace AudioVisualizer.Components;
 
 /// <summary>
 /// Abstract base for all rendering behaviors. Subclasses override <see cref="Render"/>
 /// to draw entity state onto a WPF DrawingContext each frame.
 /// Concrete behaviors are nested types so the entire rendering surface lives in one file.
 /// </summary>
-public abstract class RenderingComponent
+public abstract class Rendering
 {
     #region Pipeline
     /// <summary>
     /// Draw the entity to the given context. Default no-op.
     /// </summary>
-    public virtual void Render(SceneEntity entity, DrawingContext dc, Size viewport) { }
+    public virtual void Render(World entity, DrawingContext dc, Size viewport) { }
     #endregion
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -27,16 +27,16 @@ public abstract class RenderingComponent
     /// Spectrum-bar renderer: clears the viewport with black (background layer)
     /// and draws each band as a vertical gradient bar using the Windows accent color.
     /// </summary>
-    public sealed class Bar : RenderingComponent
+    public sealed class Bar : Rendering
     {
-        private readonly ReactivityComponent.Bar _bars;
+        private readonly Reactivity.Bar _bars;
         private readonly Color _accentColor;
         private readonly Color _lighterColor;
 
         /// <summary>
         /// Create the renderer, reading the Windows accent color for the bar gradient.
         /// </summary>
-        public Bar(ReactivityComponent.Bar bars)
+        public Bar(Reactivity.Bar bars)
         {
             _bars = bars;
 
@@ -45,7 +45,7 @@ public abstract class RenderingComponent
         }
 
         /// <inheritdoc />
-        public override void Render(SceneEntity entity, DrawingContext dc, Size viewport)
+        public override void Render(World entity, DrawingContext dc, Size viewport)
         {
             // Clear background — bars are the bottom render layer
             dc.DrawRectangle(Brushes.Black, null, new Rect(0, 0, viewport.Width, viewport.Height));
@@ -133,16 +133,16 @@ public abstract class RenderingComponent
     /// <summary>
     /// Peak-marker renderer: draws white horizontal lines at the current peak height for each band.
     /// </summary>
-    public sealed class Peak : RenderingComponent
+    public sealed class Peak : Rendering
     {
-        private readonly ReactivityComponent.Bar _bars;
-        private readonly PhysicsComponent.Peak _peaks;
+        private readonly Reactivity.Bar _bars;
+        private readonly Physics.Peak _peaks;
         private readonly Brush _peakBrush;
 
         /// <summary>
         /// Create the peak renderer, reading layout from bars and positions from peak physics.
         /// </summary>
-        public Peak(ReactivityComponent.Bar bars, PhysicsComponent.Peak peaks)
+        public Peak(Reactivity.Bar bars, Physics.Peak peaks)
         {
             _bars = bars;
             _peaks = peaks;
@@ -152,7 +152,7 @@ public abstract class RenderingComponent
         }
 
         /// <inheritdoc />
-        public override void Render(SceneEntity entity, DrawingContext dc, Size viewport)
+        public override void Render(World entity, DrawingContext dc, Size viewport)
         {
             var barHeights = _bars.BarHeights;
             var peakHeights = _peaks.PeakHeights;
@@ -179,9 +179,9 @@ public abstract class RenderingComponent
     /// Each ball type has its own visual identity: beach ball stripes, basketball seams,
     /// tennis ball felt, etc. All share a common radial highlight for 3D effect.
     /// </summary>
-    public sealed class Ball : RenderingComponent
+    public sealed class Ball : Rendering
     {
-        private readonly PhysicsComponent.Ball _physics;
+        private readonly Physics.Ball _physics;
         private readonly RadialGradientBrush _highlightBrush;
 
         // Beach ball
@@ -213,7 +213,7 @@ public abstract class RenderingComponent
         // Shared
         private readonly Pen _outlinePen;
 
-        public Ball(PhysicsComponent.Ball physics)
+        public Ball(Physics.Ball physics)
         {
             _physics = physics;
 
@@ -271,7 +271,7 @@ public abstract class RenderingComponent
         }
 
         /// <inheritdoc />
-        public override void Render(SceneEntity entity, DrawingContext dc, Size viewport)
+        public override void Render(World entity, DrawingContext dc, Size viewport)
         {
             var pos = entity.Position;
             double radius = _physics.Radius;
@@ -504,14 +504,14 @@ public abstract class RenderingComponent
     /// Goal-zone renderer: draws a pulsing golden ring that the player must guide the ball into.
     /// The pulse is time-driven (not audio-reactive) for consistent visibility.
     /// </summary>
-    public sealed class Goal : RenderingComponent
+    public sealed class Goal : Rendering
     {
         private readonly double _radius;
         private double _pulsePhase;
 
         /// <summary>
         /// When false, the goal is suppressed and not rendered at all.
-        /// Mirrors <see cref="PhysicsComponent.Goal.Enabled"/>.
+        /// Mirrors <see cref="Physics.Goal.Enabled"/>.
         /// </summary>
         public bool Enabled { get; set; } = true;
 
@@ -520,7 +520,7 @@ public abstract class RenderingComponent
         /// slightly toward the ball each frame — a visual "gravitational lean" that
         /// animates the attraction and makes the ring feel alive.
         /// </summary>
-        public SceneEntity? BallRef { get; set; }
+        public World? BallRef { get; set; }
 
         /// <summary>Maximum visual offset (px) the goal can shift toward the ball.</summary>
         private const double MaxVisualOffset = 12.0;
@@ -537,7 +537,7 @@ public abstract class RenderingComponent
         public Goal(double radius) { _radius = radius; }
 
         /// <inheritdoc />
-        public override void Render(SceneEntity entity, DrawingContext dc, Size viewport)
+        public override void Render(World entity, DrawingContext dc, Size viewport)
         {
             if (!Enabled) return;
 
@@ -592,7 +592,7 @@ public abstract class RenderingComponent
     /// Particle-pool renderer: iterates the pool's packed struct buffer and draws each
     /// live particle as an alpha-fading dot.
     /// </summary>
-    public sealed class Particle : RenderingComponent
+    public sealed class Particle : Rendering
     {
         private readonly ParticlePool _pool;
 
@@ -602,7 +602,7 @@ public abstract class RenderingComponent
         public Particle(ParticlePool pool) { _pool = pool; }
 
         /// <inheritdoc />
-        public override void Render(SceneEntity entity, DrawingContext dc, Size viewport)
+        public override void Render(World entity, DrawingContext dc, Size viewport)
         {
             var buffer = _pool.Buffer;
             for (int i = 0; i < buffer.Length; i++)

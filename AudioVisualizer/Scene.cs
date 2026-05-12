@@ -2,10 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Media;
-using AudioVisualizer.Engine.Entities;
-using AudioVisualizer.Engine.Input;
+using AudioVisualizer.Entities;
+using AudioVisualizer.Models;
 
-namespace AudioVisualizer.Engine;
+namespace AudioVisualizer;
 
 /// <summary>
 /// Game Loop + Update Method orchestrator. Owns the entity list and event queue.
@@ -21,7 +21,7 @@ public sealed class Scene
     /// <summary>
     /// All active entities in the scene.
     /// </summary>
-    private readonly List<SceneEntity> _entities = new();
+    private readonly List<World> _entities = new();
 
     /// <summary>
     /// The shared particle pool entity, exposed so external code (e.g. event handlers)
@@ -52,7 +52,7 @@ public sealed class Scene
 
     /// <summary>
     /// Current mouse state. Mutated by the WPF host between ticks; read by
-    /// <see cref="Components.InputComponent"/> instances inside the tick. The engine
+    /// <see cref="Components.Input"/> instances inside the tick. The engine
     /// itself never references WPF — this property is the entire interaction surface.
     /// </summary>
     public MouseState Mouse { get; set; }
@@ -74,10 +74,10 @@ public sealed class Scene
 
     #region Methods
     /// <summary>Add an entity to the scene.</summary>
-    public void Add(SceneEntity entity) => _entities.Add(entity);
+    public void Add(World entity) => _entities.Add(entity);
 
     /// <summary>Remove an entity from the scene.</summary>
-    public void Remove(SceneEntity entity) => _entities.Remove(entity);
+    public void Remove(World entity) => _entities.Remove(entity);
 
     /// <summary>
     /// Advance the scene by the given wall-clock delta time.

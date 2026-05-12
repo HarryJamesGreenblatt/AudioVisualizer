@@ -1,10 +1,10 @@
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
-using AudioVisualizer.Engine;
-using AudioVisualizer.Engine.Components;
-using AudioVisualizer.Engine.Configuration;
-using AudioVisualizer.Engine.Entities;
+using AudioVisualizer.Components;
+using AudioVisualizer.Configuration;
+using AudioVisualizer.Entities;
+using AudioVisualizer.Models;
 
 namespace AudioVisualizer;
 
@@ -22,17 +22,17 @@ public sealed class VisualizerElement : FrameworkElement
     private DateTime _lastTick = DateTime.UtcNow;
 
     // Always-present entities — bars and peaks are the foundation.
-    private readonly BarEntity _bars = new();
-    private readonly PeakEntity _peaks;
+    private readonly Bar _bars = new();
+    private readonly Peak _peaks;
 
     // Optional entities — null when their layer is toggled off.
-    private RainEntity? _rain;
-    private BallEntity? _ball;
+    private Rain? _rain;
+    private Ball? _ball;
 
     // Game mode state — always on by default.
     private bool _gameModeEnabled = true;
     private int _currentStage;
-    private GoalEntity? _goal;
+    private Goal? _goal;
     private float _respawnTimer;
     private const float RespawnDelay = 0.75f; // seconds between vaporize and next ball spawn
 
@@ -73,15 +73,15 @@ public sealed class VisualizerElement : FrameworkElement
     public VisualizerElement()
     {
         // Bars and peaks are always present.
-        _peaks = new PeakEntity(_bars);
+        _peaks = new Peak(_bars);
         _scene.Add(_bars);
         _scene.Add(_peaks);
 
         // Wire the particle pool's bar and peak references so rain drops can collide with both.
-        if (_scene.Particles.Physics is AudioVisualizer.Engine.Components.PhysicsComponent.Particle pp)
+        if (_scene.Particles.Physics is AudioVisualizer.Components.Physics.Particle pp)
         {
             pp.Bars = _bars.Bars;
-            pp.PeaksRef = _peaks.Physics as AudioVisualizer.Engine.Components.PhysicsComponent.Peak;
+            pp.PeaksRef = _peaks.Physics as AudioVisualizer.Components.Physics.Peak;
         }
 
         // Start with rain off, ball + game mode on by default.
@@ -121,7 +121,7 @@ public sealed class VisualizerElement : FrameworkElement
         // Anti-cheat: suppress goal while user is dragging, re-enable after release + surface contact.
         if (_gameModeEnabled && _goal != null && _ball != null)
         {
-            var ballPhysics = _ball.Physics as PhysicsComponent.Ball;
+            var ballPhysics = _ball.Physics as Physics.Ball;
             if (_ball.IsKinematic)
             {
                 // User is holding the ball — suppress goal immediately
@@ -156,7 +156,7 @@ public sealed class VisualizerElement : FrameworkElement
     {
         if (enabled && _rain == null)
         {
-            _rain = new RainEntity(_scene.Particles, _bars.Bars);
+            _rain = new Rain(_scene.Particles, _bars.Bars);
             _scene.Add(_rain);
         }
         else if (!enabled && _rain != null)
@@ -175,7 +175,7 @@ public sealed class VisualizerElement : FrameworkElement
                 ? BallPreset.Stages[_currentStage]
                 : BallPreset.Stages[0]; // default to beach ball outside game mode
 
-            _ball = new BallEntity(
+            _ball = new Ball(
                 position: new Point(ActualWidth > 0 ? ActualWidth / 2 : 200, 100),
                 bars: _bars,
                 peaks: _peaks,
@@ -183,7 +183,7 @@ public sealed class VisualizerElement : FrameworkElement
                 initialVelocity: new Vector(100, 50));
 
             // Let rain drops collide with the ball.
-            if (_scene.Particles.Physics is AudioVisualizer.Engine.Components.PhysicsComponent.Particle pp)
+            if (_scene.Particles.Physics is AudioVisualizer.Components.Physics.Particle pp)
                 pp.BallEntityRef = _ball;
 
             _scene.Add(_ball);
@@ -193,7 +193,7 @@ public sealed class VisualizerElement : FrameworkElement
             _scene.Remove(_ball);
 
             // Clear ball collision reference so particle physics doesn't hold a dead ref.
-            if (_scene.Particles.Physics is AudioVisualizer.Engine.Components.PhysicsComponent.Particle pp)
+            if (_scene.Particles.Physics is AudioVisualizer.Components.Physics.Particle pp)
                 pp.BallEntityRef = null;
 
             // Clear ball ref on goal renderer so it stops tracking the dead ball.
@@ -273,18 +273,18 @@ public sealed class VisualizerElement : FrameworkElement
         double goalRadius = preset.Radius;
         var pos = GoalPositionForStage(_currentStage);
 
-        _goal = new GoalEntity(pos, goalRadius, _ball);
+        _goal = new Goal(pos, goalRadius, _ball);
         _goal.Collision += OnGoalHit;
         _goalSuppressed = false; // new goal starts enabled
         _scene.Add(_goal);
 
         // Wire gravitational attraction: ball physics pulls toward goal.
-        if (_ball?.Physics is PhysicsComponent.Ball ballPhys)
+        if (_ball?.Physics is Physics.Ball ballPhys)
             ballPhys.GoalEntityRef = _goal;
     }
 
     /// <summary>Handle goal collision: vaporize current ball, advance stage, start respawn timer.</summary>
-    private void OnGoalHit(SceneEntity goal, CollisionInfo info)
+    private void OnGoalHit(World goal, CollisionInfo info)
     {
         if (_ball == null) return;
 
@@ -311,7 +311,7 @@ public sealed class VisualizerElement : FrameworkElement
         _ball.IsAlive = false;
 
         // Clear ball collision reference so particle physics doesn't hold a dead ref.
-        if (_scene.Particles.Physics is AudioVisualizer.Engine.Components.PhysicsComponent.Particle pp)
+        if (_scene.Particles.Physics is AudioVisualizer.Components.Physics.Particle pp)
             pp.BallEntityRef = null;
         _ball = null;
 

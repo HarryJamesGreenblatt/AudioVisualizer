@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 
-namespace AudioVisualizer.Engine;
+namespace AudioVisualizer;
 
 /// <summary>
 /// Event Queue pattern: thread-safe queue for deferred cross-thread events.

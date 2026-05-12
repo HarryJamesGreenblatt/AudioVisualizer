@@ -1,18 +1,18 @@
 using System;
 using System.Windows;
-using AudioVisualizer.Engine.Input;
+using AudioVisualizer.Models;
 
-namespace AudioVisualizer.Engine.Components;
+namespace AudioVisualizer.Components;
 
 /// <summary>
 /// Abstract base for all user-input behaviors. Subclasses override <see cref="Update"/>
 /// to translate mouse state into entity state (drag, click, sculpt, etc.).
 ///
 /// Concrete behaviors are nested types so the entire input surface lives in one file,
-/// matching the layout of the other component bases (<see cref="PhysicsComponent"/>,
-/// <see cref="ReactivityComponent"/>, <see cref="RenderingComponent"/>).
+/// matching the layout of the other component bases (<see cref="Physics"/>,
+/// <see cref="Reactivity"/>, <see cref="Rendering"/>).
 /// </summary>
-public abstract class InputComponent
+public abstract class Input
 {
     #region Pipeline
     /// <summary>
@@ -23,7 +23,7 @@ public abstract class InputComponent
     /// <param name="mouse">Mouse snapshot for this tick.</param>
     /// <param name="viewport">Current viewport dimensions.</param>
     /// <param name="dt">Fixed physics timestep in seconds.</param>
-    public virtual void Update(SceneEntity entity, MouseState mouse, Size viewport, float dt) { }
+    public virtual void Update(World entity, MouseState mouse, Size viewport, float dt) { }
     #endregion
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -33,14 +33,14 @@ public abstract class InputComponent
     /// kinematic (physics suspended) and follows the cursor; on release, throws with
     /// the cursor's recent velocity so flicking feels natural.
     ///
-    /// Hit-testing is circular against the sibling <see cref="PhysicsComponent.Ball"/>'s
+    /// Hit-testing is circular against the sibling <see cref="Physics.Ball"/>'s
     /// radius. Future variants for AABB hit-tests can sit beside this as another nested class.
     /// </summary>
-    public sealed class Drag : InputComponent
+    public sealed class Drag : Input
     {
         #region Fields
         /// <summary>Sibling physics ref \u2014 we need the radius for hit-testing.</summary>
-        private readonly PhysicsComponent.Ball _physics;
+        private readonly Physics.Ball _physics;
 
         /// <summary>Whether this entity is currently grabbed.</summary>
         private bool _grabbed;
@@ -63,12 +63,12 @@ public abstract class InputComponent
 
         #region Constructor
         /// <summary>Create a drag-input component coupled to the given ball physics for hit-testing.</summary>
-        public Drag(PhysicsComponent.Ball physics) { _physics = physics; }
+        public Drag(Physics.Ball physics) { _physics = physics; }
         #endregion
 
         #region Methods
         /// <inheritdoc />
-        public override void Update(SceneEntity entity, MouseState mouse, Size viewport, float dt)
+        public override void Update(World entity, MouseState mouse, Size viewport, float dt)
         {
             // Press → grab if cursor is over the ball
             if (mouse.JustPressed && !_grabbed)

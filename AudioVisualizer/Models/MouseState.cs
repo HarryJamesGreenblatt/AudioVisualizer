@@ -1,11 +1,11 @@
 using System.Windows;
 
-namespace AudioVisualizer.Engine.Input;
+namespace AudioVisualizer.Models;
 
 /// <summary>
 /// Plain-data snapshot of the mouse for one tick. Owned by <see cref="Scene"/>,
 /// written by the WPF host (<c>VisualizerElement</c>) from mouse events, and read
-/// by <see cref="Components.InputComponent"/> instances each tick.
+/// by <see cref="Components.Input"/> instances each tick.
 ///
 /// Engine code never references WPF — this struct is the entire interaction surface.
 /// </summary>

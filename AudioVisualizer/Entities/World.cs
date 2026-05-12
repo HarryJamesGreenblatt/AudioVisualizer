@@ -1,10 +1,10 @@
 using System;
 using System.Windows;
 using System.Windows.Media;
-using AudioVisualizer.Engine.Components;
-using AudioVisualizer.Engine.Input;
+using AudioVisualizer.Components;
+using AudioVisualizer.Models;
 
-namespace AudioVisualizer.Engine;
+namespace AudioVisualizer;
 
 /// <summary>
 /// Thin shell representing a game-world object. Owns shared state (position, velocity)
@@ -12,7 +12,7 @@ namespace AudioVisualizer.Engine;
 /// one concern. Subclasses wire concrete components in their constructors; the base
 /// class orchestrates the per-tick component pipeline.
 /// </summary>
-public class SceneEntity
+public class World
 {
     #region Properties
     /// <summary>
@@ -32,7 +32,7 @@ public class SceneEntity
 
     /// <summary>
     /// When true, physics components skip force application and integration for this entity.
-    /// Used by <see cref="Components.InputComponent.Drag"/> to suspend simulation while the
+    /// Used by <see cref="Components.Input.Drag"/> to suspend simulation while the
     /// user is holding the entity, and by any "frozen" / paused state machine.
     /// </summary>
     public bool IsKinematic { get; set; }
@@ -41,25 +41,25 @@ public class SceneEntity
     /// Input component: translates user input (mouse, keys) into entity-state mutations.
     /// Settable from subclass constructors via protected setter.
     /// </summary>
-    public InputComponent? Input { get; protected set; }
+    public Components.Input? Input { get; protected set; }
 
     /// <summary>
     /// Reactivity component: maps audio band data to entity state.
     /// Settable from subclass constructors via protected setter.
     /// </summary>
-    public ReactivityComponent? Reactivity { get; protected set; }
+    public Reactivity? Reactivity { get; protected set; }
 
     /// <summary>
     /// Physics component: forces, integration, and collision for this entity.
     /// Settable from subclass constructors via protected setter.
     /// </summary>
-    public PhysicsComponent? Physics { get; protected set; }
+    public Physics? Physics { get; protected set; }
 
     /// <summary>
     /// Rendering component: draws the entity each frame.
     /// Settable from subclass constructors via protected setter.
     /// </summary>
-    public RenderingComponent? Rendering { get; protected set; }
+    public Rendering? Rendering { get; protected set; }
     #endregion
 
     #region Events
@@ -67,7 +67,7 @@ public class SceneEntity
     /// Observer pattern: fired when a collision is detected by the physics component.
     /// Subscribers receive the originating entity and contact metadata.
     /// </summary>
-    public event Action<SceneEntity, CollisionInfo>? Collision;
+    public event Action<World, CollisionInfo>? Collision;
     #endregion
 
     #region Methods

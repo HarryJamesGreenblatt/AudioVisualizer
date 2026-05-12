@@ -1,9 +1,10 @@
 using System;
 using System.Windows;
-using AudioVisualizer.Engine.Configuration;
-using AudioVisualizer.Engine.Entities;
+using AudioVisualizer.Configuration;
+using AudioVisualizer.Entities;
+using AudioVisualizer.Models;
 
-namespace AudioVisualizer.Engine.Components;
+namespace AudioVisualizer.Components;
 
 /// <summary>
 /// Abstract base for all physics behaviors. Defines the canonical 3-phase pipeline
@@ -14,7 +15,7 @@ namespace AudioVisualizer.Engine.Components;
 /// <see cref="Particle"/> — so the entire physics surface lives in one file and
 /// the type system enforces "X is a kind of physics" via <c>PhysicsComponent.X</c>.
 /// </summary>
-public abstract class PhysicsComponent
+public abstract class Physics
 {
     #region Properties
     /// <summary>
@@ -90,17 +91,17 @@ public abstract class PhysicsComponent
     /// Phase 1: Accumulate external forces (gravity, springs, drag) into velocity.
     /// Default no-op.
     /// </summary>
-    public virtual void ApplyForces(SceneEntity entity, float dt) { }
+    public virtual void ApplyForces(World entity, float dt) { }
 
     /// <summary>
     /// Phase 2: Integrate velocity into position. Default no-op.
     /// </summary>
-    public virtual void Integrate(SceneEntity entity, float dt) { }
+    public virtual void Integrate(World entity, float dt) { }
 
     /// <summary>
     /// Phase 3: Detect and resolve collisions / constraints. Default no-op.
     /// </summary>
-    public virtual void ResolveCollisions(SceneEntity entity, float dt, Size viewport) { }
+    public virtual void ResolveCollisions(World entity, float dt, Size viewport) { }
     #endregion
 
     #region Helpers
@@ -166,7 +167,7 @@ public abstract class PhysicsComponent
     /// </summary>
     /// <param name="entity">Entity whose Position and Velocity will be advanced.</param>
     /// <param name="dt">Fixed physics timestep in seconds.</param>
-    protected void IntegrateAccumulated(SceneEntity entity, float dt)
+    protected void IntegrateAccumulated(World entity, float dt)
     {
         double invMass = Mass > 0 ? 1.0 / Mass : 0;
 
@@ -196,7 +197,7 @@ public abstract class PhysicsComponent
     /// All per-ball-type constants come from <see cref="BallPreset"/>; collision
     /// constants remain shared across all types.
     /// </summary>
-    public sealed class Ball : PhysicsComponent
+    public sealed class Ball : Physics
     {
         /// <summary>Ball type identifier — drives rendering dispatch and game-mode progression.</summary>
         public BallKind Kind { get; }
@@ -205,10 +206,10 @@ public abstract class PhysicsComponent
         public double Radius { get; }
 
         /// <summary>Bar reactivity providing live column heights as the floor surface.</summary>
-        private readonly ReactivityComponent.Bar? _bars;
+        private readonly Reactivity.Bar? _bars;
 
         /// <summary>Optional peak physics providing additional thin floor surfaces atop the bars.</summary>
-        private readonly PhysicsComponent.Peak? _peaks;
+        private readonly Physics.Peak? _peaks;
 
         // ── Per-type physics constants (from BallPreset) ──
         private readonly float _gravity;
@@ -318,7 +319,7 @@ public abstract class PhysicsComponent
         /// distance so it's weak near the goal (no suction) but strong when the ball
         /// drifts far away (corrects the rightward spectrum-slope bias).
         /// </summary>
-        public SceneEntity? GoalEntityRef { get; set; }
+        public World? GoalEntityRef { get; set; }
 
         /// <summary>
         /// Linear spring constant (px/s² per px of distance). The attraction
@@ -338,7 +339,7 @@ public abstract class PhysicsComponent
         /// Create a ball physics component from a preset. Pass a bar reactivity (and optionally
         /// peak physics) to make the ball collide with the visible spectrum geometry.
         /// </summary>
-        public Ball(BallPreset preset, ReactivityComponent.Bar? bars = null, PhysicsComponent.Peak? peaks = null)
+        public Ball(BallPreset preset, Reactivity.Bar? bars = null, Physics.Peak? peaks = null)
         {
             Kind = preset.Kind;
             Radius = preset.Radius;
@@ -355,7 +356,7 @@ public abstract class PhysicsComponent
         }
 
         /// <inheritdoc />
-        public override void ApplyForces(SceneEntity entity, float dt)
+        public override void ApplyForces(World entity, float dt)
         {
             // Kinematic entities are externally controlled (e.g. user dragging the ball);
             // skip force/drag accumulation so the input component can dictate position freely.
@@ -381,7 +382,7 @@ public abstract class PhysicsComponent
             // (force ∝ distance) that corrects the rightward drift from the spectrum slope.
             // Weak near the goal (no suction), strong when far away (pulls the ball back).
             // Only active when the goal is visible (respects anti-cheat suppression).
-            if (GoalEntityRef is GoalEntity { Enabled: true, IsAlive: true } goalEnt)
+            if (GoalEntityRef is Entities.Goal { Enabled: true, IsAlive: true } goalEnt)
             {
                 var diff = goalEnt.Position - entity.Position;
                 double dist = diff.Length;
@@ -400,7 +401,7 @@ public abstract class PhysicsComponent
         }
 
         /// <inheritdoc />
-        public override void Integrate(SceneEntity entity, float dt)
+        public override void Integrate(World entity, float dt)
         {
             // Kinematic entities have their position dictated by the input component;
             // we still tick rotation so the ball can spin while held.
@@ -413,7 +414,7 @@ public abstract class PhysicsComponent
         }
 
         /// <inheritdoc />
-        public override void ResolveCollisions(SceneEntity entity, float dt, Size viewport)
+        public override void ResolveCollisions(World entity, float dt, Size viewport)
         {
             // Refractory countdown ticks even on no-contact frames.
             if (_bounceRefractory > 0)
@@ -661,11 +662,11 @@ public abstract class PhysicsComponent
     /// <summary>
     /// Peak-hold physics: each band's marker falls under gravity, holds at impact,
     /// and elastically bounces when bars push back up into it.
-    /// Cross-entity coupling: reads live bar heights from a <see cref="ReactivityComponent.Bar"/>.
+    /// Cross-entity coupling: reads live bar heights from a <see cref="Reactivity.Bar"/>.
     /// </summary>
-    public sealed class Peak : PhysicsComponent
+    public sealed class Peak : Physics
     {
-        private readonly ReactivityComponent.Bar _bars;
+        private readonly Reactivity.Bar _bars;
         private float[] _peakHold = [];
         private float[] _peakVelocity = [];
         private int[] _holdTimer = [];
@@ -695,7 +696,7 @@ public abstract class PhysicsComponent
         /// <summary>
         /// Create a peak-hold physics component coupled to the given bar reactivity.
         /// </summary>
-        public Peak(ReactivityComponent.Bar bars) { _bars = bars; }
+        public Peak(Reactivity.Bar bars) { _bars = bars; }
 
         private bool EnsureBuffers()
         {
@@ -713,7 +714,7 @@ public abstract class PhysicsComponent
         }
 
         /// <inheritdoc />
-        public override void ApplyForces(SceneEntity entity, float dt)
+        public override void ApplyForces(World entity, float dt)
         {
             if (!EnsureBuffers()) return;
 
@@ -737,7 +738,7 @@ public abstract class PhysicsComponent
         }
 
         /// <inheritdoc />
-        public override void Integrate(SceneEntity entity, float dt)
+        public override void Integrate(World entity, float dt)
         {
             if (_peakHold.Length == 0) return;
             for (int i = 0; i < _peakHold.Length; i++)
@@ -748,7 +749,7 @@ public abstract class PhysicsComponent
         }
 
         /// <inheritdoc />
-        public override void ResolveCollisions(SceneEntity entity, float dt, Size viewport)
+        public override void ResolveCollisions(World entity, float dt, Size viewport)
         {
             var barHeights = _bars.BarHeights;
             if (barHeights.Length == 0) return;
@@ -784,7 +785,7 @@ public abstract class PhysicsComponent
     /// for cache locality and zero per-particle dispatch overhead.
     /// Also drives lifecycle (TickLifetimes) post-integration.
     /// </summary>
-    public sealed class Particle : PhysicsComponent
+    public sealed class Particle : Physics
     {
         private readonly ParticlePool _pool;
 
@@ -793,20 +794,20 @@ public abstract class PhysicsComponent
         /// collision. Settable post-construction because the pool is created inside Scene
         /// before any BarEntity exists — the WPF host wires this after both are constructed.
         /// </summary>
-        public ReactivityComponent.Bar? Bars { get; set; }
+        public Reactivity.Bar? Bars { get; set; }
 
         /// <summary>
         /// Optional ball entity reference for drop-vs-ball collision. Drops that hit the
         /// ball splash off in the contact-normal direction (same single-bounce-then-die
         /// rule as bar collision). Settable post-construction.
         /// </summary>
-        public SceneEntity? BallEntityRef { get; set; }
+        public World? BallEntityRef { get; set; }
 
         /// <summary>
         /// Optional peak physics reference for drop-vs-peak collision. When set, rain drops
         /// collide with the higher of bar top or peak marker. Settable post-construction.
         /// </summary>
-        public PhysicsComponent.Peak? PeaksRef { get; set; }
+        public Physics.Peak? PeaksRef { get; set; }
 
         /// <summary>
         /// Scene-wide wind — the AIR'S velocity (px/sec). Each rain drop computes its drag
@@ -854,14 +855,14 @@ public abstract class PhysicsComponent
         /// Pass a bar reactivity to enable rain-drop bouncing off the bar surface;
         /// pass null for spark-only behavior (no surface interaction).
         /// </summary>
-        public Particle(ParticlePool pool, ReactivityComponent.Bar? bars = null)
+        public Particle(ParticlePool pool, Reactivity.Bar? bars = null)
         {
             _pool = pool;
             Bars = bars;
         }
 
         /// <inheritdoc />
-        public override void ApplyForces(SceneEntity entity, float dt)
+        public override void ApplyForces(World entity, float dt)
         {
             var buffer = _pool.Buffer;
             var wind = Wind;
@@ -896,7 +897,7 @@ public abstract class PhysicsComponent
         }
 
         /// <inheritdoc />
-        public override void Integrate(SceneEntity entity, float dt)
+        public override void Integrate(World entity, float dt)
         {
             var buffer = _pool.Buffer;
 
@@ -933,7 +934,7 @@ public abstract class PhysicsComponent
         }
 
         /// <inheritdoc />
-        public override void ResolveCollisions(SceneEntity entity, float dt, Size viewport)
+        public override void ResolveCollisions(World entity, float dt, Size viewport)
         {
             // Spark particles have no surface interaction — they fall and die at lifetime end.
             // Rain drops bounce once off the bars (or the floor, or the ball) and then die quickly.
@@ -944,7 +945,7 @@ public abstract class PhysicsComponent
             double colWidth = barCount > 0 ? viewport.Width / barCount : 0;
 
             // Pre-compute ball collision geometry (cheap), used per drop below.
-            var ballPhysics = BallEntityRef?.Physics as PhysicsComponent.Ball;
+            var ballPhysics = BallEntityRef?.Physics as Physics.Ball;
             double ballR = ballPhysics?.Radius ?? 0;
             double ballR2 = ballR * ballR;
             bool checkBall = BallEntityRef != null && ballPhysics != null && ballR > 0;
@@ -1041,13 +1042,13 @@ public abstract class PhysicsComponent
     #region Nested: Goal
     /// <summary>
     /// Goal-zone physics: detects when a ball entity enters the goal radius and fires
-    /// the <see cref="SceneEntity.Collision"/> event to signal a stage clear.
+    /// the <see cref="World.Collision"/> event to signal a stage clear.
     /// No forces or integration — the goal is static.
     /// </summary>
-    public sealed class Goal : PhysicsComponent
+    public sealed class Goal : Physics
     {
         private readonly double _radius;
-        private readonly SceneEntity _ball;
+        private readonly World _ball;
         private bool _triggered;
 
         /// <summary>
@@ -1056,13 +1057,13 @@ public abstract class PhysicsComponent
         /// </summary>
         public bool Enabled { get; set; } = true;
 
-        public Goal(double radius, SceneEntity ball)
+        public Goal(double radius, World ball)
         {
             _radius = radius;
             _ball = ball;
         }
 
-        public override void ResolveCollisions(SceneEntity entity, float dt, Size viewport)
+        public override void ResolveCollisions(World entity, float dt, Size viewport)
         {
             if (!Enabled || _triggered || _ball == null || !_ball.IsAlive) return;
 

@@ -1,6 +1,6 @@
 using System.Windows;
 
-namespace AudioVisualizer.Engine;
+namespace AudioVisualizer.Models;
 
 /// <summary>
 /// Data carried by a collision notification (Observer pattern payload).

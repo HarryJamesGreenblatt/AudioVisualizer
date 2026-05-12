@@ -2,14 +2,14 @@ using System;
 using System.Windows;
 using System.Windows.Media;
 
-namespace AudioVisualizer.Engine.Components;
+namespace AudioVisualizer.Components;
 
 /// <summary>
 /// Abstract base for all audio-reactive behaviors. Subclasses override <see cref="React"/>
 /// to map mel-band magnitudes into entity state (position, velocity, internal buffers).
 /// Concrete behaviors are nested types so the entire reactivity surface lives in one file.
 /// </summary>
-public abstract class ReactivityComponent
+public abstract class Reactivity
 {
     #region Pipeline
     /// <summary>
@@ -19,7 +19,7 @@ public abstract class ReactivityComponent
     /// <param name="bands">Current mel-band magnitudes (may be empty if no audio).</param>
     /// <param name="viewport">Current viewport dimensions for pixel-space scaling.</param>
     /// <param name="dt">Fixed physics timestep in seconds. Use this for cooldowns and continuous-force integration so behavior stays tick-rate independent.</param>
-    public virtual void React(SceneEntity entity, ReadOnlySpan<float> bands, Size viewport, float dt) { }
+    public virtual void React(World entity, ReadOnlySpan<float> bands, Size viewport, float dt) { }
     #endregion
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -28,7 +28,7 @@ public abstract class ReactivityComponent
     /// Spectrum-bar reactivity: scales each mel-band magnitude into a pixel-space height
     /// via dynamic global-max normalization (instant rise, slow decay).
     /// </summary>
-    public sealed class Bar : ReactivityComponent
+    public sealed class Bar : Reactivity
     {
         private float _globalMax = 0.01f;
         private float[] _prevHeights = [];
@@ -75,7 +75,7 @@ public abstract class ReactivityComponent
         public float[] BandHeat => _bandHeat;
 
         /// <inheritdoc />
-        public override void React(SceneEntity entity, ReadOnlySpan<float> bands, Size viewport, float dt)
+        public override void React(World entity, ReadOnlySpan<float> bands, Size viewport, float dt)
         {
             // Even when no audio arrives, decay surface velocities toward zero so a
             // stale spike doesn't haunt the next contact.
@@ -207,7 +207,7 @@ public abstract class ReactivityComponent
     /// Owns no physics or rendering of its own — the spawned drops are particles in the
     /// shared <see cref="Entities.ParticlePool"/> and animate via the standard particle pipeline.
     /// </summary>
-    public sealed class RainEmitter : ReactivityComponent
+    public sealed class RainEmitter : Reactivity
     {
         #region Fields
         private readonly Entities.ParticlePool _pool;
@@ -288,7 +288,7 @@ public abstract class ReactivityComponent
 
         #region Methods
         /// <inheritdoc />
-        public override void React(SceneEntity entity, ReadOnlySpan<float> bands, Size viewport, float dt)
+        public override void React(World entity, ReadOnlySpan<float> bands, Size viewport, float dt)
         {
             if (viewport.Width <= 0 || dt <= 0) return;
 
@@ -341,7 +341,7 @@ public abstract class ReactivityComponent
             // ─── Wind exponential decay toward zero ( ambient air comes to rest if no new gusts ) ───
             _wind *= Math.Exp(-WindDecay * dt);
 
-            if (_pool.Physics is PhysicsComponent.Particle pp)
+            if (_pool.Physics is Physics.Particle pp)
                 pp.Wind = _wind;
 
             // ─── Spawn drops with per-drop varied size — intensity driven by smoothed energy ───

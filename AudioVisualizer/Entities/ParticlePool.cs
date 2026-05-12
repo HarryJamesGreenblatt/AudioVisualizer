@@ -1,9 +1,9 @@
 using System;
 using System.Windows;
 using System.Windows.Media;
-using AudioVisualizer.Engine.Components;
+using AudioVisualizer.Components;
 
-namespace AudioVisualizer.Engine.Entities;
+namespace AudioVisualizer.Entities;
 
 /// <summary>
 /// Particle pool entity. Combines the Object Pool pattern (free-list allocation of
@@ -12,9 +12,9 @@ namespace AudioVisualizer.Engine.Entities;
 ///
 /// Particles themselves are <see cref="Particle"/> structs — packed for cache locality
 /// and zero GC pressure during gameplay. Treating each particle as its own
-/// <see cref="SceneEntity"/> would destroy that performance, so the pool is the entity boundary.
+/// <see cref="World"/> would destroy that performance, so the pool is the entity boundary.
 /// </summary>
-public sealed class ParticlePool : SceneEntity
+public sealed class ParticlePool : World
 {
     #region Fields
     /// <summary>
@@ -43,7 +43,7 @@ public sealed class ParticlePool : SceneEntity
     /// </summary>
     /// <param name="capacity">Maximum number of concurrent particles.</param>
     /// <param name="bars">Optional bar reactivity — enables rain-drop bouncing off the bar surface.</param>
-    public ParticlePool(int capacity = 512, ReactivityComponent.Bar? bars = null)
+    public ParticlePool(int capacity = 512, Reactivity.Bar? bars = null)
     {
         _particles = new Particle[capacity];
         for (int i = 0; i < capacity; i++)
@@ -57,8 +57,8 @@ public sealed class ParticlePool : SceneEntity
         _firstAvailable = 0;
 
         // Wire up components — pool is the entity, components operate on its buffer
-        Physics   = new PhysicsComponent.Particle(this, bars);
-        Rendering = new RenderingComponent.Particle(this);
+        Physics   = new Physics.Particle(this, bars);
+        Rendering = new Rendering.Particle(this);
     }
     #endregion
 

@@ -1,14 +1,14 @@
 using System.Windows;
-using AudioVisualizer.Engine.Components;
+using AudioVisualizer.Components;
 
-namespace AudioVisualizer.Engine.Entities;
+namespace AudioVisualizer.Entities;
 
 /// <summary>
 /// Goal zone entity. A static glowing ring that the player must guide the ball into.
-/// When the ball enters the goal, fires <see cref="SceneEntity.Collision"/> to signal
+/// When the ball enters the goal, fires <see cref="World.Collision"/> to signal
 /// a stage clear. Has no reactivity or input — purely visual + trigger.
 /// </summary>
-public sealed class GoalEntity : SceneEntity
+public sealed class Goal : World
 {
     /// <summary>Goal radius in pixels.</summary>
     public double Radius { get; }
@@ -27,16 +27,16 @@ public sealed class GoalEntity : SceneEntity
         }
     }
 
-    private readonly PhysicsComponent.Goal _goalPhysics;
-    private readonly RenderingComponent.Goal _goalRendering;
+    private readonly Physics.Goal _goalPhysics;
+    private readonly Rendering.Goal _goalRendering;
 
     /// <summary>Construct a goal at the given position, watching the specified ball for overlap.</summary>
-    public GoalEntity(Point position, double radius, SceneEntity ball)
+    public Goal(Point position, double radius, World ball)
     {
         Position = position;
         Radius = radius;
-        _goalPhysics = new PhysicsComponent.Goal(radius, ball);
-        _goalRendering = new RenderingComponent.Goal(radius) { BallRef = ball };
+        _goalPhysics = new Physics.Goal(radius, ball);
+        _goalRendering = new Rendering.Goal(radius) { BallRef = ball };
         Physics   = _goalPhysics;
         Rendering = _goalRendering;
     }
@@ -44,7 +44,7 @@ public sealed class GoalEntity : SceneEntity
     /// <summary>
     /// Update the ball reference on the goal's renderer (e.g. after ball respawn).
     /// </summary>
-    public void SetBallRef(SceneEntity? ball)
+    public void SetBallRef(World? ball)
     {
         _goalRendering.BallRef = ball;
     }

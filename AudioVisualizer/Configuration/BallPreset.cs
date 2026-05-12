@@ -1,4 +1,4 @@
-namespace AudioVisualizer.Engine.Configuration;
+namespace AudioVisualizer.Configuration;
 
 /// <summary>
 /// Identifies the ball type for rendering dispatch and game-mode progression.

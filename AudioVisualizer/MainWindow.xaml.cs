@@ -1,14 +1,13 @@
 ﻿using System.Windows;
 using System.Windows.Media;
 using AudioVisualizer.Services;
-using AudioVisualizer.Processing;
 
 namespace AudioVisualizer;
 
 public partial class MainWindow : Window
 {
     private readonly AudioCaptureService _capture = new();
-    private FftProcessor _fft = new(fftSize: 1024, bandCount: 64);
+    private FftProcessingService _fft = new(fftSize: 1024, bandCount: 64);
     private bool _running;
 
     // Double-buffer: audio thread writes to _backBuffer then swaps;
@@ -63,7 +62,7 @@ public partial class MainWindow : Window
             {
                 _capture.Start();
                 int sr = _capture.WaveFormat?.SampleRate ?? 44100;
-                _fft = new FftProcessor(fftSize: 1024, bandCount: 64, sampleRate: sr);
+                _fft = new FftProcessingService(fftSize: 1024, bandCount: 64, sampleRate: sr);
                 _running = true;
                 StartStopButton.Content = "Stop";
             }

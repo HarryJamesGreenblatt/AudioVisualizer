@@ -1,7 +1,7 @@
 using System;
 using System.Windows;
 
-namespace AudioVisualizer.Engine;
+namespace AudioVisualizer;
 
 /// <summary>
 /// Event fired from the audio thread when a transient (sharp attack) is detected.
