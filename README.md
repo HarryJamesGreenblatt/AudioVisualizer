@@ -1,6 +1,6 @@
 # Audio Visualizer
 
-![Cover](https://github.com/HarryJamesGreenblatt/AudioVisualizer/blob/main/AudioVisualizer/Assets/Images/Cover.png?raw=true)
+![Cover](https://github.com/HarryJamesGreenblatt/WavBall/blob/main/WavBall/Assets/Images/Cover.png?raw=true)
 
 A real-time audio spectrum visualizer and physics game for Windows built with WPF and .NET 9. Captures system audio output via WASAPI loopback and renders a mel-scale frequency bar visualization that responds to any audio playing through the default output device — Spotify, browsers, games, etc. Toggle on **Rain**, a **Ball**, or full **Game Mode** to layer interactive physics on top of the spectrum.
 
@@ -22,7 +22,7 @@ A real-time audio spectrum visualizer and physics game for Windows built with WP
 ## Architecture
 
 ```
-AudioVisualizer/
+WavBall/
 ├── Components/
 │   ├── Input.cs              # Mouse drag interaction
 │   ├── Physics.cs            # Newtonian physics (ball, peak, particle)
@@ -89,10 +89,10 @@ AudioVisualizer/
 ### Build & Run
 
 ```bash
-git clone https://github.com/HarryJamesGreenblatt/AudioVisualizer.git
-cd AudioVisualizer
+git clone https://github.com/HarryJamesGreenblatt/WavBall.git
+cd WavBall
 dotnet build
-dotnet run --project AudioVisualizer
+dotnet run --project WavBall
 ```
 
 Play audio through your default output device, then click **Start**.
