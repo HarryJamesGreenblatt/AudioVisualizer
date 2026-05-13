@@ -6,7 +6,8 @@
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:local="clr-namespace:WavBall"
         mc:Ignorable="d"
-        Title="WavBall" Height="400" Width="900"
+        Title="Windows WavBall" Height="400" Width="900"
+        Icon="Assets/Images/Icon.ico"
         Background="Black" Closing="Window_Closing">
     <Grid>
         <Grid.RowDefinitions>

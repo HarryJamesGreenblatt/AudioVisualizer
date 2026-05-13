@@ -23,6 +23,9 @@ artifacts/
 # Scripts (may contain resource patterns/endpoints)
 Scripts/
 
+# Reference images (design source material)
+WavBall/Assets/Images/Reference/
+
 # OS
 Thumbs.db
 .DS_Store

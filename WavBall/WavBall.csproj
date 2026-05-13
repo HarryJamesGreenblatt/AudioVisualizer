@@ -6,8 +6,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
-    <Product>WavBall</Product>
-    <AssemblyTitle>WavBall</AssemblyTitle>
+    <Product>Windows WavBall</Product>
+    <AssemblyTitle>Windows WavBall</AssemblyTitle>
+    <Description>Real-time audio spectrum visualizer and physics game for Windows. Captures system audio via WASAPI loopback and turns it into a playable surface.</Description>
+    <Authors>Harry Greenblatt</Authors>
+    <Copyright>Copyright © 2025 Harry Greenblatt</Copyright>
+    <ApplicationIcon>Assets\Images\Icon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -18,6 +22,7 @@
 
   <ItemGroup>
     <Resource Include="Assets\Generated\*.png" />
+    <Resource Include="Assets\Images\Icon.png" />
   </ItemGroup>
 
 </Project>

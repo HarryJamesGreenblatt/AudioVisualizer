@@ -1,4 +1,4 @@
-# Audio Visualizer
+# Windows WavBall
 
 ![Cover](https://github.com/HarryJamesGreenblatt/WavBall/blob/main/WavBall/Assets/Images/Cover.png?raw=true)
 
