@@ -179,12 +179,29 @@ public abstract class Rendering
     /// Sprite-based ball renderer. Loads a pre-generated PNG for each <see cref="BallKind"/>
     /// and draws it with rotation. A radial highlight overlay in world space provides
     /// a consistent 3D lighting effect across all ball types.
+    ///
+    /// AI-generated sprites have transparent padding around the visible ball and a
+    /// drop-shadow on the bottom-right that don't correspond to the geometric ball.
+    /// At construction we scan the alpha channel to find the visible ball's center and
+    /// radius in sprite-pixel space, then at render time we draw the sprite scaled and
+    /// translated so the visible ball circle exactly maps to the physics circle. This
+    /// makes the rendered ball flush against bars/peaks at rest — no visible gap.
     /// </summary>
     public sealed class Ball : Rendering
     {
         private readonly Physics.Ball _physics;
         private readonly BitmapImage _sprite;
         private readonly RadialGradientBrush _highlightBrush;
+
+        /// <summary>Visible ball center inside the sprite, normalized to [0,1] of sprite pixel dims.</summary>
+        private readonly Point _spriteBallCenterNorm;
+
+        /// <summary>
+        /// Pre-multiplied scale factor applied to sprite pixel dims at render time so the
+        /// visible ball diameter equals <c>physics.Radius * 2</c>. Equal to
+        /// <c>physics.Radius / visibleBallRadiusInSpritePx</c>.
+        /// </summary>
+        private readonly double _spriteScale;
 
         public Ball(Physics.Ball physics)
         {
@@ -194,6 +211,8 @@ public abstract class Rendering
             _sprite = new BitmapImage(uri);
             RenderOptions.SetBitmapScalingMode(_sprite, BitmapScalingMode.Fant);
             _sprite.Freeze();
+
+            (_spriteBallCenterNorm, _spriteScale) = MeasureVisibleBall(_sprite, physics.Radius);
 
             _highlightBrush = new RadialGradientBrush();
             _highlightBrush.GradientStops.Add(new GradientStop(Color.FromArgb(100, 255, 255, 255), 0.0));
@@ -206,9 +225,20 @@ public abstract class Rendering
         {
             var pos = entity.Position;
             double radius = _physics.Radius;
-            var rect = new Rect(pos.X - radius, pos.Y - radius, radius * 2, radius * 2);
 
-            // Clip to a circle so the heavily-downscaled transparent edges stay crisp
+            // Map the sprite so its visible-ball center lands on `pos` and its visible-ball
+            // radius equals `radius`. The sprite is drawn at its natural pixel dims times
+            // _spriteScale; the rect origin is shifted so _spriteBallCenterNorm of the
+            // upscaled sprite coincides with pos.
+            double drawW = _sprite.PixelWidth  * _spriteScale;
+            double drawH = _sprite.PixelHeight * _spriteScale;
+            var rect = new Rect(
+                pos.X - _spriteBallCenterNorm.X * drawW,
+                pos.Y - _spriteBallCenterNorm.Y * drawH,
+                drawW, drawH);
+
+            // Clip to the physics circle so the sprite's transparent padding/shadow
+            // (now sitting outside the visible ball after upscaling) gets trimmed cleanly.
             var clipGeometry = new EllipseGeometry(pos, radius, radius);
             clipGeometry.Freeze();
             dc.PushClip(clipGeometry);
@@ -222,6 +252,66 @@ public abstract class Rendering
             // Highlight in world space (light source doesn't rotate with the ball)
             var highlightCenter = new Point(pos.X - radius * 0.25, pos.Y - radius * 0.25);
             dc.DrawEllipse(_highlightBrush, null, highlightCenter, radius * 0.6, radius * 0.6);
+        }
+
+        /// <summary>
+        /// Scan the sprite's alpha channel to locate the visible ball's center and radius
+        /// in sprite-pixel space, then return (center normalized to sprite dims, scale to
+        /// apply at render time so the visible diameter equals <c>2 * targetRadius</c>).
+        ///
+        /// Strategy: find the topmost opaque row (shadow-free since shadows fall below the
+        /// ball), then scan rows in the upper half to find the widest opaque span — that's
+        /// the ball's equator. Width gives diameter; assuming circularity, the vertical
+        /// center is <c>topRow + radius</c>. Limiting the search to the upper half keeps
+        /// the bottom-right drop-shadow from inflating the measurement.
+        /// </summary>
+        private static (Point centerNorm, double scale) MeasureVisibleBall(BitmapImage source, double targetRadius)
+        {
+            // Ensure BGRA32 so byte index 3 of every 4-byte pixel is alpha
+            BitmapSource fmt = source.Format == PixelFormats.Bgra32
+                ? source
+                : new FormatConvertedBitmap(source, PixelFormats.Bgra32, null, 0);
+
+            int w = fmt.PixelWidth, h = fmt.PixelHeight;
+            int stride = w * 4;
+            byte[] px = new byte[stride * h];
+            fmt.CopyPixels(px, stride, 0);
+
+            // High threshold excludes anti-aliased edges and faint shadow halos
+            const byte AlphaThreshold = 200;
+
+            int topRow = -1;
+            for (int y = 0; y < h && topRow < 0; y++)
+                for (int x = 0; x < w; x++)
+                    if (px[y * stride + x * 4 + 3] >= AlphaThreshold) { topRow = y; break; }
+
+            if (topRow < 0) return (new Point(0.5, 0.5), 1.0); // empty sprite — no-op
+
+            // Search the upper half only — shadow is always below the ball
+            int searchEnd = Math.Min(h, topRow + h / 2);
+            int bestLeft = 0, bestRight = 0, bestWidth = 0;
+            for (int y = topRow; y < searchEnd; y++)
+            {
+                int left = -1, right = -1;
+                for (int x = 0; x < w; x++)
+                    if (px[y * stride + x * 4 + 3] >= AlphaThreshold) { left = x; break; }
+                for (int x = w - 1; x >= 0; x--)
+                    if (px[y * stride + x * 4 + 3] >= AlphaThreshold) { right = x; break; }
+
+                if (left < 0 || right <= left) continue;
+                int width = right - left;
+                if (width > bestWidth) { bestWidth = width; bestLeft = left; bestRight = right; }
+            }
+
+            if (bestWidth == 0) return (new Point(0.5, 0.5), 1.0);
+
+            double ballRadiusPx = bestWidth / 2.0;
+            double ballCenterX = (bestLeft + bestRight) / 2.0;
+            double ballCenterY = topRow + ballRadiusPx; // circular assumption — ball center sits one radius below the top
+
+            return (
+                new Point(ballCenterX / w, ballCenterY / h),
+                targetRadius / ballRadiusPx);
         }
 
         private static string SpriteFileName(BallKind kind) => kind switch

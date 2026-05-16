@@ -17,7 +17,7 @@ jobs:
         with:
           dotnet-version: '9.0.x'
 
-      - name: Publish
+      - name: Publish (single-file)
         run: >
           dotnet publish WavBall/WavBall.csproj
           -c Release
@@ -25,13 +25,30 @@ jobs:
           --self-contained true
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
-          -o publish
+          -p:DebugType=embedded
+          -o publish-singlefile
 
-      - name: Upload artifact
+      - name: Publish (folder)
+        run: >
+          dotnet publish WavBall/WavBall.csproj
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=false
+          -p:DebugType=embedded
+          -o publish-folder
+
+      - name: Upload single-file artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WavBall-win-x64-singlefile
+          path: publish-singlefile/
+
+      - name: Upload folder artifact
         uses: actions/upload-artifact@v4
         with:
           name: WavBall-win-x64
-          path: publish/
+          path: publish-folder/
 
   release:
     needs: build
