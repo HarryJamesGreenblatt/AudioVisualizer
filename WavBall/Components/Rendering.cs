@@ -419,6 +419,38 @@ public abstract class Rendering
         /// <summary>Smoothed visual offset applied to the rendered position.</summary>
         private Vector _visualOffset;
 
+        // ── Oscilloscope squiggle (snare-driven geometric deformation) ──
+        // Alpha/scale pulsing of a small reticle reads weakly. Instead, snare hits
+        // kick a sinusoidal deflection that ripples through the ring + crosshair
+        // like an impulse hitting an oscilloscope trace — brightness still tells the
+        // collidability story (charge), but shape now tells the snare story on an
+        // independent perceptual axis. Fast attack (max with current decay), slow
+        // exponential ring-out.
+
+        /// <summary>Current squiggle amplitude in pixels. Bumped by SnareFlux each frame, decays exponentially otherwise.</summary>
+        private double _squiggleAmp;
+
+        /// <summary>Phase advance for the squiggle waveform, in radians. Slowly rotates so the trace lives even when amplitude plateaus under sustained hi-hat / busy treble.</summary>
+        private double _squigglePhase;
+
+        /// <summary>Pixel deflection per unit SnareFlux. Sized so a strong hit deforms the ring by ~25% of its radius.</summary>
+        private const double SquiggleAmpGainPx = 8.0;
+
+        /// <summary>Per-frame retention of the squiggle amplitude (≈60 fps). 0.88 ⇒ visible tail for ~25 frames ≈ 0.4 s, so each snare hit punches and rings out cleanly.</summary>
+        private const double SquiggleDecayPerFrame = 0.88;
+
+        /// <summary>Number of full sine cycles around the ring's circumference. Higher = tighter wiggle.</summary>
+        private const double SquiggleRingCycles = 18.0;
+
+        /// <summary>Radians of phase advance per frame. Keeps the trace alive under sustained input by rotating the wave pattern.</summary>
+        private const double SquigglePhaseSpeed = 0.20;
+
+        /// <summary>Segments per ring polyline. 72 = one vertex every 5°; smooth at any radius the goal renders at.</summary>
+        private const int SquiggleRingSegments = 72;
+
+        /// <summary>Reusable point buffer for the ring polyline so we don't allocate every frame.</summary>
+        private readonly Point[] _ringPts = new Point[SquiggleRingSegments];
+
         public Goal(double radius, Reactivity.Bar bars)
         {
             _radius = radius;
@@ -470,6 +502,19 @@ public abstract class Rendering
             double glowPulse = Math.Clamp(_glowPulse, 0, 1);
             double ringPulse = Math.Clamp(_ringPulse, 0, 1);
 
+            // Oscilloscope kick: SnareFlux drives a geometric deflection that ripples
+            // through the ring + crosshair, like an impulse hitting a scope trace.
+            // Brightness above still says "can I score now" (charge); shape now says
+            // "snare just hit" (transient impulse) — two snare-related signals on two
+            // independent perceptual axes. Fast attack via max(decayed, new), slow
+            // exponential ring-out via the per-frame decay factor.
+            double snareKick = _bars.SnareFlux * SquiggleAmpGainPx;
+            _squiggleAmp = Math.Max(_squiggleAmp * SquiggleDecayPerFrame, snareKick);
+            _squigglePhase += SquigglePhaseSpeed;
+            // Gate: squiggle is only visible when the goal is charged (collidable).
+            // Dead-cold = perfect circle, no geometric noise.
+            double effectiveSquiggle = _squiggleAmp * ringPulse;
+
             // Outer satiety halo — drawn in a distinct COOL color (cyan) at a radius
             // that GROWS with satiety, so the player sees the goal physically swell
             // with fullness and shrink as it digests. The categorical hue + size split
@@ -501,22 +546,49 @@ public abstract class Rendering
             // brightens dramatically the moment the goal lands on food and arms
             // collision. The dim resting state is the "not collidable" signal and is
             // intentional — don't raise its floor.
+            // Rendered as a snare-deformed polyline circle so transient hits ripple
+            // through the ring's geometry; with zero squiggle amplitude this is
+            // visually indistinguishable from a plain ellipse at the same radius.
             byte ringAlpha = (byte)(50 + 205 * ringPulse);   // 50..255
             var ringPen = new Pen(new SolidColorBrush(Color.FromArgb(ringAlpha, 255, 215, 0)), 3);
             ringPen.Freeze();
-            dc.DrawEllipse(null, ringPen, pos, _radius, _radius);
+            DrawSquiggleRing(dc, ringPen, pos, effectiveSquiggle);
 
-            // Crosshair reticle — same charge story as the inner ring; fades with charge
-            // so the dim resting state continues to signal "not collidable". Stroke
-            // width also scales with charge so a charged reticle reads as a confident
-            // bold crosshair rather than a hairline that's easy to miss against busy
-            // spectrum bars behind.
+            // Crosshair reticle — plain straight lines (squiggle on arms looked wrong;
+            // the ring alone carries the oscilloscope impulse). Same charge-fading
+            // brightness as before.
             byte crossAlpha = (byte)(35 + 220 * ringPulse);  // 35..255
             var crossPen = new Pen(new SolidColorBrush(Color.FromArgb(crossAlpha, 255, 215, 0)), 1 + 2 * ringPulse);
             crossPen.Freeze();
             double c = 6;
             dc.DrawLine(crossPen, new Point(pos.X - c, pos.Y), new Point(pos.X + c, pos.Y));
             dc.DrawLine(crossPen, new Point(pos.X, pos.Y - c), new Point(pos.X, pos.Y + c));
+        }
+
+        // ─── Squiggle geometry helpers ───
+
+        /// <summary>Build the ring as a closed polyline with radial sin perturbation. Polyline path is taken every frame; at zero amplitude the result is visually a plain circle so there's no "squiggle on / squiggle off" pop.</summary>
+        private void DrawSquiggleRing(DrawingContext dc, Pen pen, Point pos, double amp)
+        {
+            double phase = _squigglePhase;
+            int n = SquiggleRingSegments;
+            for (int i = 0; i < n; i++)
+            {
+                double th = i * (2.0 * Math.PI / n);
+                double r = _radius + amp * Math.Sin(SquiggleRingCycles * th + phase);
+                _ringPts[i] = new Point(pos.X + r * Math.Cos(th), pos.Y + r * Math.Sin(th));
+            }
+
+            var geo = new StreamGeometry();
+            using (var ctx = geo.Open())
+            {
+                ctx.BeginFigure(_ringPts[0], isFilled: false, isClosed: true);
+                var rest = new Point[n - 1];
+                Array.Copy(_ringPts, 1, rest, 0, n - 1);
+                ctx.PolyLineTo(rest, isStroked: true, isSmoothJoin: true);
+            }
+            geo.Freeze();
+            dc.DrawGeometry(null, pen, geo);
         }
     }
     #endregion

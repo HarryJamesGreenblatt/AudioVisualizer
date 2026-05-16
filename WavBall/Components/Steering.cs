@@ -224,9 +224,12 @@ public abstract class Steering
             if (!ReferenceEquals(next, _mood)) SetMood(next);
 
             // ── 2. Mood picks a band (-1 ⇒ no qualifying band → drift to spawn) ──
+            // X comes from the band index; Y is mood-owned so Feeding can hover above
+            // the bar top while Sated can retreat to the top of the viewport — out of
+            // the audio potential field entirely, where discharge is plausible.
             int band = _mood.PickBand(this);
             Point target = band >= 0
-                ? new Point((band + 0.5) * colWidth, h - barHeights[band] - HoverOffset)
+                ? new Point((band + 0.5) * colWidth, _mood.ResolveTargetY(this, band, h, barHeights))
                 : _spawn;
 
             // ── 3. Audio-driven wander, shared across all moods ──
@@ -307,12 +310,21 @@ public abstract class Steering
 
         // ── Appetite machine ────────────────────────────────────────────────
 
-        /// <summary>Adopt a mood. Resets the satiety accumulator to the mood's <see cref="Mood.InitialSatiety"/> (e.g. entering Sated starts at 1.0 because you just got full; entering Feeding starts at 0.0 because you just got empty) and zeros the dwell timer.</summary>
+        /// <summary>
+        /// Per-mood scratch slot — currently used by <see cref="Sated"/> to randomize
+        /// its retreat altitude on each entry (set in <see cref="Mood.OnEnter"/>,
+        /// read in <see cref="Mood.ResolveTargetY"/>). Kept on the host rather than
+        /// on the mood instance because moods are shared singletons.
+        /// </summary>
+        private double _satedRetreatYFrac;
+
+        /// <summary>Adopt a mood. Resets the satiety accumulator to the mood's <see cref="Mood.InitialSatiety"/> (e.g. entering Sated starts at 1.0 because you just got full; entering Feeding starts at 0.0 because you just got empty) and zeros the dwell timer. Calls <see cref="Mood.OnEnter"/> so moods can seed any per-entry random state.</summary>
         private void SetMood(Mood next)
         {
             _mood = next;
             _moodTime = 0;
             _satiety = next.InitialSatiety;
+            next.OnEnter(this);
         }
 
         /// <summary>
@@ -356,6 +368,25 @@ public abstract class Steering
             /// value for a mood that starts partially saturated.
             /// </summary>
             public virtual double InitialSatiety => 0.0;
+
+            /// <summary>
+            /// Resolve the world-space Y for the picked band. Default hovers
+            /// <see cref="HoverOffset"/> above the bar's top edge — appropriate for
+            /// feeding moods that want to sit on the flame. Override for moods that
+            /// want to escape the audio potential field entirely (e.g. <see cref="Sated"/>
+            /// retreats toward the top of the viewport so the Gaussian field of the
+            /// underlying band can't keep recharging the sensor).
+            /// </summary>
+            public virtual double ResolveTargetY(Goal host, int band, double viewportH, float[] barHeights)
+                => viewportH - barHeights[band] - HoverOffset;
+
+            /// <summary>
+            /// Hook called by <see cref="SetMood"/> when this mood is entered. Default
+            /// no-op. Override to seed per-entry random state on the host (e.g.
+            /// <see cref="Sated"/> picks a fresh retreat altitude here so each Sated
+            /// cycle looks different rather than always parking in the same corner).
+            /// </summary>
+            public virtual void OnEnter(Goal host) { }
         }
 
         /// <summary>
@@ -411,15 +442,40 @@ public abstract class Steering
         /// (≈ band 53) and the mosquito flies right to digest; if a treble passage
         /// pulls the centroid right, the anti-centroid is left and it goes left. The
         /// goal actively pulls AWAY from wherever loudness is concentrated rather than
-        /// just picking the marginally-smallest band. Satiety drains while away from
-        /// heat — slowly during transit (charge still moderate), faster once arrived
-        /// at the cold spot — and once it empties (or MaxDwell elapses) we flip back
-        /// to <see cref="Feeding"/>. Entry satiety overrides to 1.0 (just got full).
+        /// just picking the marginally-smallest band.
+        /// <para>Crucially, the Y target is <b>inverted</b>: instead of hovering above
+        /// the anti-centroid bar's top (still inside that band's Gaussian potential —
+        /// a mid-strength signal would keep recharging the sensor and contradict the
+        /// "discharge" intent), the goal retreats toward the top of the viewport,
+        /// genuinely far from every bar. The X choice still steers it away from the
+        /// loudest region; the Y choice puts it above the action where distance-based
+        /// discharge is plausible.</para>
+        /// Satiety drains while away from heat — slowly during transit (charge still
+        /// moderate), faster once arrived at the cold spot — and once it empties (or
+        /// MaxDwell elapses) we flip back to <see cref="Feeding"/>. Entry satiety
+        /// overrides to 1.0 (just got full).
         /// </summary>
         private sealed class Sated : Mood
         {
+            /// <summary>Highest retreat altitude (smallest Y fraction — near top of viewport). At this end the goal is hardest to reach: only the high-energy balls can lob into it.</summary>
+            private const double MinRetreatYFrac = 0.10;
+
+            /// <summary>Lowest retreat altitude (largest Y fraction — mid-screen). At this end even the beach ball has a plausible "slow lob" window. Chosen below the half-line so the retreat still reads as <i>retreat</i> rather than just "hovering somewhere else".</summary>
+            private const double MaxRetreatYFrac = 0.55;
+
             public override string Name => "Sated";
             public override double InitialSatiety => 1.0;
+
+            /// <summary>Roll a fresh retreat altitude every time we enter Sated, so the cycle doesn't stale-park in the same corner and occasionally drops to a lobbable height.</summary>
+            public override void OnEnter(Goal host)
+            {
+                host._satedRetreatYFrac = MinRetreatYFrac +
+                    Random.Shared.NextDouble() * (MaxRetreatYFrac - MinRetreatYFrac);
+            }
+
+            public override double ResolveTargetY(Goal host, int band, double viewportH, float[] barHeights)
+                => viewportH * host._satedRetreatYFrac;
+
             public override int PickBand(Goal host)
             {
                 var bars = host._bars.BarHeights;
