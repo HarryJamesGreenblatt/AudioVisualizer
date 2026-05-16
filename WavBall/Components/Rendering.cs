@@ -331,13 +331,40 @@ public abstract class Rendering
     // ─────────────────────────────────────────────────────────────────────────
     #region Nested: Goal
     /// <summary>
-    /// Goal-zone renderer: draws a pulsing golden ring that the player must guide the ball into.
-    /// The pulse is time-driven (not audio-reactive) for consistent visibility.
+    /// Goal-zone renderer: draws a glowing golden ring whose brightness is the product of
+    /// two signals — a slow <b>charge envelope</b> (from <see cref="Steering.Goal.Charge"/>,
+    /// supplied via <see cref="ChargeSource"/>) and a fast <b>pulse modulation</b>
+    /// (from <see cref="Reactivity.Bar"/> snare + energy). A fresh-spawned goal is
+    /// visibly depleted; as the steering locks onto loud bands it charges up and the
+    /// halo blooms; once charged it punches on every snare hit. Same charge feeds
+    /// <see cref="Physics.Goal.IsLive"/> so the visual state IS the gameplay state.
     /// </summary>
     public sealed class Goal : Rendering
     {
         private readonly double _radius;
-        private double _pulsePhase;
+        private readonly Reactivity.Bar _bars;
+
+        /// <summary>Smoothed pulse value (0–1). Eased toward the live audio target so the glow doesn't strobe on raw flux spikes.</summary>
+        private double _pulse;
+
+        /// <summary>
+        /// Optional accessor for the goal's charge envelope (typically wired to
+        /// <see cref="Steering.Goal.Charge"/>). Returns 0–1; null defaults to 1.0 (always
+        /// fully charged) for standalone / legacy use.
+        /// </summary>
+        public Func<double>? ChargeSource { get; set; }
+
+        /// <summary>Per-frame exponential lerp factor for the pulse — fast enough to feel responsive, slow enough to read as a glow rather than a flicker.</summary>
+        private const double PulseLerpRate = 0.25;
+
+        /// <summary>Snare contribution to pulse modulation (per unit SnareFlux). Snare hits punch the glow brighter.</summary>
+        private const double SnareGain = 0.65;
+
+        /// <summary>Energy contribution to pulse modulation (per unit Energy). Smooth musical activity raises the floor.</summary>
+        private const double EnergyGain = 0.45;
+
+        /// <summary>Minimum modulation value when charged — so even silent-music pulse stays visibly above the floor.</summary>
+        private const double ModulationFloor = 0.40;
 
         /// <summary>
         /// When false, the goal is suppressed and not rendered at all.
@@ -364,7 +391,11 @@ public abstract class Rendering
         /// <summary>Smoothed visual offset applied to the rendered position.</summary>
         private Vector _visualOffset;
 
-        public Goal(double radius) { _radius = radius; }
+        public Goal(double radius, Reactivity.Bar bars)
+        {
+            _radius = radius;
+            _bars = bars;
+        }
 
         /// <inheritdoc />
         public override void Render(World entity, DrawingContext dc, Size viewport)
@@ -389,24 +420,35 @@ public abstract class Rendering
             _visualOffset += (targetOffset - _visualOffset) * OffsetLerpRate;
             var pos = entity.Position + _visualOffset;
 
-            // Slow sine pulse for glow intensity
-            _pulsePhase += 0.03;
-            double pulse = 0.5 + 0.5 * Math.Sin(_pulsePhase);
-            byte glowAlpha = (byte)(40 + 50 * pulse);
+            // ── Charge envelope × audio modulation ──
+            // Two-factor pulse: charge (slow, 0..1) gates overall presence; modulation
+            // (fast, snare + energy) gives per-frame punch. Their PRODUCT is what drives
+            // every alpha channel below — so a depleted goal is nearly invisible no matter
+            // how loud the music, and a fully-charged goal still pulses dramatically on
+            // transients instead of sitting at constant luminosity.
+            double charge = Math.Clamp(ChargeSource?.Invoke() ?? 1.0, 0, 1);
+            double modulation = Math.Clamp(_bars.SnareFlux * SnareGain + _bars.Energy * EnergyGain, 0, 1);
+            double target = charge * (ModulationFloor + (1.0 - ModulationFloor) * modulation);
+            _pulse += (target - _pulse) * PulseLerpRate;
+            double pulse = Math.Clamp(_pulse, 0, 1);
 
-            // Outer glow
-            var glowPen = new Pen(new SolidColorBrush(Color.FromArgb(glowAlpha, 255, 215, 0)), 14 + 4 * pulse);
+            // Outer glow — most dramatic dynamic range: depleted ≈ invisible halo,
+            // charged + loud ≈ big bright halo. Thickness also scales so the halo
+            // physically blooms as the goal arms.
+            byte glowAlpha = (byte)(10 + 210 * pulse);   // 10..220
+            var glowPen = new Pen(new SolidColorBrush(Color.FromArgb(glowAlpha, 255, 215, 0)), 4 + 16 * pulse);
             glowPen.Freeze();
             dc.DrawEllipse(null, glowPen, pos, _radius, _radius);
 
-            // Inner ring
-            byte ringAlpha = (byte)(180 + 60 * pulse);
+            // Inner ring — always faintly visible (so the player can see where the goal IS
+            // even when uncharged), but brightens dramatically with charge × pulse.
+            byte ringAlpha = (byte)(60 + 195 * pulse);   // 60..255
             var ringPen = new Pen(new SolidColorBrush(Color.FromArgb(ringAlpha, 255, 215, 0)), 3);
             ringPen.Freeze();
             dc.DrawEllipse(null, ringPen, pos, _radius, _radius);
 
             // Small crosshair at center
-            byte crossAlpha = (byte)(100 + 40 * pulse);
+            byte crossAlpha = (byte)(40 + 180 * pulse);  // 40..220
             var crossPen = new Pen(new SolidColorBrush(Color.FromArgb(crossAlpha, 255, 215, 0)), 1);
             crossPen.Freeze();
             double c = 6;

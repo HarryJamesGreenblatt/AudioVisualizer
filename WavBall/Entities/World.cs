@@ -56,6 +56,14 @@ public class World
     public Physics? Physics { get; protected set; }
 
     /// <summary>
+    /// Steering component: autonomous-agent motion (target selection + seek/arrive/wander).
+    /// Distinct from <see cref="Physics"/>, which moves the entity in response to external
+    /// forces; steering is the entity moving according to its own intent.
+    /// Settable from subclass constructors via protected setter.
+    /// </summary>
+    public Steering? Steering { get; protected set; }
+
+    /// <summary>
     /// Rendering component: draws the entity each frame.
     /// Settable from subclass constructors via protected setter.
     /// </summary>
@@ -85,6 +93,7 @@ public class World
     {
         Input?.Update(this, mouse, viewport, dt);
         Reactivity?.React(this, bands, viewport, dt);
+        Steering?.Steer(this, viewport, dt);
         Physics?.ApplyForces(this, dt);
         Physics?.Integrate(this, dt);
     }

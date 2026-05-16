@@ -25,9 +25,10 @@ A real-time audio spectrum visualizer and physics game for Windows built with WP
 WavBall/
 ├── Components/
 │   ├── Input.cs              # Mouse drag interaction
-│   ├── Physics.cs            # Newtonian physics (ball, peak, particle)
+│   ├── Physics.cs            # Newtonian physics (ball, peak, particle, goal trigger)
 │   ├── Reactivity.cs         # Audio-reactive behavior (bars, rain emitter)
-│   └── Rendering.cs          # Visual rendering (bars, peaks, ball, particles, goal)
+│   ├── Rendering.cs          # Visual rendering (bars, peaks, ball, particles, goal)
+│   └── Steering.cs           # Autonomous-agent motion (goal mood machine + capacitance charge)
 ├── Configuration/
 │   └── BallPreset.cs         # 7-stage ball catalog (kind, mass, COR, drag)
 ├── Entities/

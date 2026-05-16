@@ -1057,6 +1057,15 @@ public abstract class Physics
         /// </summary>
         public bool Enabled { get; set; } = true;
 
+        /// <summary>
+        /// Optional liveness gate, wired by <see cref="Entities.Goal"/> to the steering
+        /// component's charge state. When set and returns false the trigger is suppressed
+        /// even though the component is Enabled — this is what gives a fresh-spawned goal
+        /// a charge-up grace period so it doesn't instantly score on an overlapping ball.
+        /// Null ⇒ no gate (legacy / standalone use always live).
+        /// </summary>
+        public Func<bool>? IsLive { get; set; }
+
         public Goal(double radius, World ball)
         {
             _radius = radius;
@@ -1066,10 +1075,9 @@ public abstract class Physics
         public override void ResolveCollisions(World entity, float dt, Size viewport)
         {
             if (!Enabled || _triggered || _ball == null || !_ball.IsAlive) return;
+            if (IsLive is { } gate && !gate()) return;
 
             var diff = _ball.Position - entity.Position;
-            var ballPhysics = _ball.Physics as Ball;
-            double ballRadius = ballPhysics?.Radius ?? 0;
 
             // Trigger when ball center enters the goal circle
             if (diff.Length < _radius)

@@ -37,7 +37,7 @@ public sealed class VisualizerElement : FrameworkElement
     private const float RespawnDelay = 0.75f; // seconds between vaporize and next ball spawn
 
     /// <summary>
-    /// Anti-cheat: true while the goal is suppressed (invisible + untriggerable).
+    /// Anti-cheat: true while the goal is suppressed (invisible + untriggerable + frozen).
     /// Set when the user grabs the ball; cleared only after the ball is released AND
     /// has made contact with the bar/peak surface, preventing drop-in cheats.
     /// </summary>
@@ -138,6 +138,9 @@ public sealed class VisualizerElement : FrameworkElement
                 _goal.Enabled = true;
             }
         }
+
+        // NOTE: goal motion lives in Steering.Goal (an autonomous-agent component on the
+        // Goal entity), driven through the normal World.Update pipeline. Nothing to do here.
 
         InvalidateVisual();
     }
@@ -242,6 +245,9 @@ public sealed class VisualizerElement : FrameworkElement
     /// <summary>
     /// Compute goal position for a given stage. Early stages are lower and more
     /// centered; later stages are higher and offset toward weaker bar regions.
+    /// X is the stage's nominal position — the runtime <see cref="UpdateGoalAudioDrift"/>
+    /// pass then drifts the goal toward the heat centroid each tick, so static placement
+    /// is just an anchor, not a final destination.
     /// </summary>
     private Point GoalPositionForStage(int stage)
     {
@@ -273,7 +279,9 @@ public sealed class VisualizerElement : FrameworkElement
         double goalRadius = preset.Radius;
         var pos = GoalPositionForStage(_currentStage);
 
-        _goal = new Goal(pos, goalRadius, _ball);
+        // Wire the goal with the spectrum so its Steering.Goal component can pick targets
+        // and its Rendering.Goal can pulse with the music.
+        _goal = new Goal(pos, goalRadius, _ball, _bars.Bars);
         _goal.Collision += OnGoalHit;
         _goalSuppressed = false; // new goal starts enabled
         _scene.Add(_goal);
