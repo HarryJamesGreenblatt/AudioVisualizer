@@ -43,24 +43,42 @@ public abstract class Steering
     // ─────────────────────────────────────────────────────────────────────────
     #region Nested: Goal
     /// <summary>
-    /// "Moth-to-flame" steering for the Goal entity, organized as a <b>Nystrom-style
-    /// state machine</b> (Game Programming Patterns, ch. State). The shared steering
-    /// pipeline — audio-driven wander, seek-with-arrival, integration, viewport clamp —
-    /// is invariant; only the choice of <i>which band to target this tick</i> varies.
-    /// Each <see cref="Mood"/> owns:
+    /// "Mosquito" steering for the Goal entity, organized as a <b>two-dimensional
+    /// appetite machine</b> (Nystrom-style State Pattern). The shared steering pipeline —
+    /// audio-driven wander, seek-with-arrival, integration, viewport clamp — is
+    /// invariant; only the choice of <i>which band to target this tick</i> varies with mood.
+    ///
+    /// <para>Two orthogonal signals drive the cycle, modelling the mosquito's environment
+    /// and metabolism separately:</para>
     /// <list type="bullet">
-    ///   <item><description>its band-selection rule (e.g. max amplitude, max heat, min activity)</description></item>
-    ///   <item><description>its dwell duration (uniform in [MinDwell, MaxDwell])</description></item>
-    ///   <item><description>its choice of successor when the dwell expires</description></item>
+    ///   <item><description><b>Charge</b> (sensor, supplied by <see cref="Charge.Goal"/> via <see cref="ChargeSource"/>): "am I on food <i>right now?</i>" — a fast Gaussian field reading at the goal's current position. Read-only here.</description></item>
+    ///   <item><description><b>Satiety</b> (metabolic state, owned by this component): "am I currently <i>full?</i>" — a slow 0–1 accumulator that ticks UP while Feeding (proportional to charge: you only fill when actually feeding) and DOWN while Sated (proportional to <c>1−charge</c>: you digest faster in genuinely cold spots).</description></item>
     /// </list>
-    /// This routes the fairy's "intent" without a giant central switch — the same way
-    /// Nystrom's animation/character states avoid nested conditionals when behaviors
-    /// compose (jumping while ducking while swinging). New moods are pure additions:
-    /// drop a class into <see cref="MoodPool"/> and it joins the rotation.
+    /// <para>Why two dimensions instead of one. Charge alone can't drive both phases
+    /// reliably: the bass-dominated loudest band keeps shifting, so charge plateaus
+    /// at some mid value and rarely crosses a fixed Schmitt threshold; even when it
+    /// does, the transit time to the anti-centroid is long enough that charge drops
+    /// below the hungry threshold mid-flight, flipping the mood back before the goal
+    /// ever <i>arrives</i> at the cold spot. Satiety is integrated over time, so it
+    /// fills as long as the goal finds <i>any</i> heat at <i>any</i> moment, and it
+    /// only drains noticeably once the goal has genuinely left the loud region —
+    /// guaranteeing the cycle completes regardless of how flickery the spectrum is.</para>
+    /// <para>Two guards keep the cycle well-behaved:
+    /// <see cref="MinDwell"/> prevents mood-flicker at the boundary, and
+    /// <see cref="MaxDwell"/> forces a flip after a hard timeout so degenerate audio
+    /// (silence, pure-DC, etc.) doesn't pin the mood indefinitely.</para>
+    /// <list type="bullet">
+    ///   <item><description><see cref="Feeding"/> — hungry; targets the band that wins a proximity-weighted loudness contest (nearby modest band can beat far loud one). From the center this still picks the bass; from a far-side position the goal feeds locally rather than snapping back. Transitions to <see cref="Sated"/> when satiety saturates (or MaxDwell elapses).</description></item>
+    ///   <item><description><see cref="Sated"/> — full; targets the spectrum's <i>anti-centroid</i> (the band index mirroring the spectral centroid) so the goal actively pulls AWAY from wherever loudness is concentrated, finding a cold spot to bleed off. Transitions back to <see cref="Feeding"/> when satiety empties (or MaxDwell elapses).</description></item>
+    /// </list>
+    /// New moods are pure additions — define a nested subclass with its
+    /// <see cref="Mood.PickBand"/> rule, <see cref="Mood.Tick"/> transition logic,
+    /// and (optionally) <see cref="Mood.InitialSatiety"/> entry value.
     ///
     /// <para>Per-tick flow:</para>
     /// <list type="number">
-    ///   <item><description>Tick mood timer; on expiry, ask the mood for its successor.</description></item>
+    ///   <item><description>Tick dwell timer; drift satiety (Feeding fills with charge, Sated drains with 1−charge).</description></item>
+    ///   <item><description>Mood self-evaluates against satiety + dwell; may return a successor.</description></item>
     ///   <item><description>Mood picks a band (or returns -1 → fall back to spawn).</description></item>
     ///   <item><description>Audio-driven wander offset is added to the target.</description></item>
     ///   <item><description>Seek-with-arrival produces desired velocity → steering force.</description></item>
@@ -78,21 +96,28 @@ public abstract class Steering
         private double _vx, _vy;
         private double _wanderAngle;
 
-        // ── Mood state machine ──
-        private Mood _mood = null!;          // set in ctor via SetMood
-        private double _moodTimer;
-        private double _moodDuration;
-        private readonly Random _rng = new();
-
-        // ── Charge state ──
         /// <summary>
-        /// Personal "engagement" accumulator, 0–1. Grows when the active mood picks a
-        /// strong band (musical engagement) and leaks slowly otherwise. Drives both the
-        /// glow envelope in <see cref="Rendering.Goal"/> and the trigger gate in
-        /// <see cref="Physics.Goal"/> — so a fresh-spawned goal is visibly depleted AND
-        /// physically inert, then both light up together as it locks onto the music.
+        /// Fractional band index corresponding to the goal's current X position.
+        /// Updated once per tick at the top of <see cref="Steer"/> so mood
+        /// <see cref="Mood.PickBand"/> implementations can apply proximity weighting
+        /// without needing the entity / viewport in their signature.
         /// </summary>
-        private double _charge;
+        private double _currentBandIdx;
+
+        // ── Appetite machine ( Charge sensor + Satiety state ) ──
+        private Mood _mood = null!;          // set in ctor via SetMood
+        /// <summary>Metabolic accumulator, 0–1. 0 = empty/hungry, 1 = full/sated. Drifts up while Feeding (proportional to charge), down while Sated (proportional to 1−charge). Reset by <see cref="SetMood"/> on each transition.</summary>
+        private double _satiety;
+        /// <summary>Seconds elapsed since the current mood was entered. Used with <see cref="MinDwell"/>/<see cref="MaxDwell"/> to debounce/guarantee transitions.</summary>
+        private double _moodTime;
+
+        /// <summary>
+        /// Lambda readback to the sibling <see cref="Charge.Goal"/> component's value.
+        /// Wired by the owning entity so this component stays decoupled from the
+        /// concrete charge implementation — it just asks "what's my engagement right
+        /// now?" and decides which mood to be in. Null → treated as 0 (always hungry).
+        /// </summary>
+        public Func<double>? ChargeSource { get; set; }
 
         // ── Tunables ──
 
@@ -107,6 +132,9 @@ public abstract class Steering
 
         /// <summary>Minimum bar height (px) for a band to be considered "active" by amplitude-based moods. Bands below this are treated as silent / unfocused.</summary>
         private const double ActiveBandFloor = 8.0;
+
+        /// <summary>Standard deviation of the proximity weight used by <see cref="Feeding"/>, expressed as a fraction of the band count. The Feeding mood scores each band by <c>height · exp(−Δi² / 2σ²)</c>, so this controls how strongly the mosquito prefers a nearby modest band over a far loud one. Smaller → more local (mosquito hovers around its current X); larger → more global (still likely to snap back to bass). 0.30 keeps bass winning from the center of the screen but lets a far-side goal stay and feed on modest local heat instead of pendulum-ing back to the bass every cycle.</summary>
+        private const double ProximitySigmaFrac = 0.30;
 
         /// <summary>Minimum band-heat for a band to be considered "warm" by heat-based moods.</summary>
         private const double WarmBandFloor = 0.05;
@@ -129,43 +157,36 @@ public abstract class Steering
         /// <summary>Maximum vertical drift from spawn Y, as fraction of viewport height.</summary>
         private const double DriftMaxYFrac = 0.40;
 
-        // ── Charge dynamics: capacitor charging from the spectrum's scalar
-        //    potential at the goal's current position. Treats the bars as a continuous
-        //    charge distribution (each band a softened point charge at its hover point)
-        //    rather than a single target. The goal absorbs from whatever portion of the
-        //    distribution it's currently sitting in — so wandering near a hot region
-        //    charges it even without exact alignment, and drifting into a quiet region
-        //    discharges it. Decoupled from the steering: the moods still pick a single
-        //    target for motion, but the charge sees the whole field.
+        // ── Appetite dynamics (Satiety drift + dwell guards) ──
 
-        /// <summary>Softening length (px) in the 1/r kernel. Prevents divergence when the goal sits exactly on a band's hover point; sets the "close-range plateau" at which a single band's contribution saturates.</summary>
-        private const double SoftEps = 50.0;
+        /// <summary>Maximum fill rate (units/sec) for <see cref="_satiety"/> while Feeding, scaled by current charge each tick. At full charge (1.0) satiety fills to 1.0 in ~1/rate seconds; at average charge ~0.5 the effective time-to-full is ~4 seconds.</summary>
+        private const double SatietyFillRate = 0.55;
 
-        /// <summary>Reference potential at which the capacitor's target reaches 1.0. Tuned so that hovering over a moderately loud part of the spectrum drives charge to saturation.</summary>
-        private const double VRef = 25.0;
+        /// <summary>Maximum drain rate (units/sec) for <see cref="_satiety"/> while Sated, scaled by (1−charge) each tick. Genuinely cold spots (charge≈0) drain at the full rate; transit through moderately-loud regions drains slower, so the goal has time to reach the anti-centroid before flipping back.</summary>
+        private const double SatietyDrainRate = 0.20;
 
-        /// <summary>Capacitor time constant (seconds). Same value governs both charge and discharge — symmetric breathing rather than asymmetric gain/leak.</summary>
-        private const double CapTau = 1.2;
+        /// <summary>Minimum seconds the goal must remain in a mood before any transition. Debounces the boundary so a brief satiety dip/spike can't flicker the mood.</summary>
+        private const double MinDwell = 1.5;
 
-        /// <summary>Charge level at or above which the goal is "armed" — Physics.Goal will fire collisions, Rendering.Goal reaches full glow envelope.</summary>
-        private const double ArmThreshold = 0.40;
+        /// <summary>Hard maximum seconds in a single mood. Forces a flip even if satiety hasn't reached its limit — guarantees the cycle progresses through degenerate audio (silence, pure-DC, uniformly loud) where satiety can't be driven all the way to its bound.</summary>
+        private const double MaxDwell = 14.0;
 
         public Goal(double radius, Point spawn, Reactivity.Bar bars)
         {
             _radius = radius;
             _spawn = spawn;
             _bars = bars;
-            SetMood(MoodPool[0]);  // start in HuntPeak
+            SetMood(FeedingMood);  // start hungry
         }
 
         /// <summary>Name of the currently active mood — useful for diagnostic overlays.</summary>
         public string CurrentMood => _mood.Name;
 
-        /// <summary>Current charge level, 0–1. Read by Rendering.Goal as the glow envelope.</summary>
-        public double Charge => _charge;
+        /// <summary>Current satiety (metabolic fullness), 0–1. Read for diagnostic overlays.</summary>
+        public double Satiety => _satiety;
 
-        /// <summary>True once charge has reached <see cref="ArmThreshold"/>. Read by Physics.Goal to gate the trigger so a fresh-spawned goal doesn't instantly score on an overlapping ball.</summary>
-        public bool IsArmed => _charge >= ArmThreshold;
+        /// <summary>Seconds elapsed in the current mood. Read for diagnostic overlays.</summary>
+        public double MoodTime => _moodTime;
 
         /// <inheritdoc />
         public override void Steer(World entity, Size viewport, float dt)
@@ -177,47 +198,36 @@ public abstract class Steering
             var barHeights = _bars.BarHeights;
             if (barHeights.Length == 0) return;
 
-            // ── 1. Tick mood; transition on dwell expiry ──
-            _moodTimer += dt;
-            if (_moodTimer >= _moodDuration)
-            {
-                SetMood(_mood.OnDwellExpire(this));
-            }
+            // Stash the goal's current X as a fractional band index so moods can
+            // apply proximity weighting without taking entity / viewport in their
+            // signature. Computed once per tick before any mood logic runs.
+            double colWidth = w / barHeights.Length;
+            _currentBandIdx = Math.Clamp(entity.Position.X / colWidth - 0.5, 0, barHeights.Length - 1);
+
+            // ── 1. Drift satiety from charge, then let the mood self-evaluate ──
+            // Charge (sensor): am I on food right now?  Satiety (state): am I full?
+            // Feeding fills satiety proportional to charge — you only feel full when
+            // you actually feed. Sated drains it proportional to (1−charge) — you
+            // digest faster in cold spots, slower in transit through loud regions.
+            // This decouples the cycle from any single Schmitt threshold on a noisy
+            // signal: even if charge oscillates, satiety integrates and reaches its
+            // bound monotonically. MinDwell debounces; MaxDwell guarantees cycling.
+            _moodTime += dt;
+            double chargeNow = Math.Clamp(ChargeSource?.Invoke() ?? 0.0, 0, 1);
+            if (_mood is Feeding)
+                _satiety += chargeNow * SatietyFillRate * dt;
+            else // Sated
+                _satiety -= (1.0 - chargeNow) * SatietyDrainRate * dt;
+            _satiety = Math.Clamp(_satiety, 0, 1);
+
+            var next = _mood.Tick(this);
+            if (!ReferenceEquals(next, _mood)) SetMood(next);
 
             // ── 2. Mood picks a band (-1 ⇒ no qualifying band → drift to spawn) ──
             int band = _mood.PickBand(this);
-            double colWidth = w / barHeights.Length;
             Point target = band >= 0
                 ? new Point((band + 0.5) * colWidth, h - barHeights[band] - HoverOffset)
                 : _spawn;
-
-            // ── 2a. Charge from distributed-field potential (capacitor model) ──
-            // Sample the scalar potential V = Σ q_i / sqrt(r_i² + ε²) of the whole
-            // spectrum at the goal's current position. Each band is a softened point
-            // charge at its hover point with magnitude q_i = barHeights[i]. Capacitor
-            // dynamics dQ/dt = (V_norm − Q)/τ mean charge rises when the goal sits in
-            // a high-potential region (near loud bands) and falls otherwise — same
-            // time constant in both directions, so charge breathes with the music
-            // rather than ratcheting up. Decoupled from steering: motion still seeks a
-            // single target, but the charge sees the entire distribution.
-            double V = 0;
-            double eps2 = SoftEps * SoftEps;
-            double gx = entity.Position.X;
-            double gy = entity.Position.Y;
-            for (int i = 0; i < barHeights.Length; i++)
-            {
-                double q = barHeights[i];
-                if (q <= 0) continue;
-                double bx = (i + 0.5) * colWidth;
-                double by = h - barHeights[i] - HoverOffset;
-                double ddx = bx - gx;
-                double ddy = by - gy;
-                double r = Math.Sqrt(ddx * ddx + ddy * ddy + eps2);
-                V += q / r;
-            }
-            double vNorm = Math.Clamp(V / VRef, 0, 1);
-            _charge += (vNorm - _charge) * (dt / CapTau);
-            _charge = Math.Clamp(_charge, 0, 1);
 
             // ── 3. Audio-driven wander, shared across all moods ──
             // Quiet → slow drift; busy → fast orbit; snare hits → angle twitches.
@@ -295,53 +305,34 @@ public abstract class Steering
             entity.Position = new Point(newX, newY);
         }
 
-        // ── Mood machine ────────────────────────────────────────────────────
+        // ── Appetite machine ────────────────────────────────────────────────
 
-        /// <summary>Adopt a mood and randomize its dwell within [MinDwell, MaxDwell].</summary>
+        /// <summary>Adopt a mood. Resets the satiety accumulator to the mood's <see cref="Mood.InitialSatiety"/> (e.g. entering Sated starts at 1.0 because you just got full; entering Feeding starts at 0.0 because you just got empty) and zeros the dwell timer.</summary>
         private void SetMood(Mood next)
         {
             _mood = next;
-            _moodTimer = 0;
-            _moodDuration = next.MinDwell + _rng.NextDouble() * (next.MaxDwell - next.MinDwell);
-        }
-
-        /// <summary>Pick any mood other than <paramref name="current"/> uniformly at random.</summary>
-        private Mood RandomMoodExcept(Mood current)
-        {
-            // Rejection sample so consecutive moods always differ — keeps the rotation legible.
-            while (true)
-            {
-                var pick = MoodPool[_rng.Next(MoodPool.Length)];
-                if (pick != current) return pick;
-            }
+            _moodTime = 0;
+            _satiety = next.InitialSatiety;
         }
 
         /// <summary>
-        /// Stateless mood instances shared across all <see cref="Goal"/> agents — each
-        /// mood reads/writes the host's blackboard rather than carrying state, so a
-        /// single instance per type is sufficient. To add a new mood: define a nested
-        /// subclass and add it to this array.
+        /// Stateless mood singletons — each mood reads the host's blackboard
+        /// (charge, bars, position) rather than carrying state, so one instance per
+        /// type is sufficient and the appetite cycle's structure is reified as the
+        /// transitions in each mood's <see cref="Mood.Tick"/>.
         /// </summary>
-        private static readonly Mood[] MoodPool =
-        {
-            new HuntPeak(),
-            new HuntHeat(),
-            new SeekQuiet(),
-        };
+        private static readonly Feeding FeedingMood = new();
+        private static readonly Sated   SatedMood   = new();
 
         /// <summary>
-        /// Base mood. Each subclass picks a target band by its own rule; the shared
-        /// steering pipeline handles wander, seek, integration, and clamping. Following
-        /// Nystrom's State Pattern, the mood also owns its dwell timing and its choice
-        /// of successor — no central switch decides "what comes next".
+        /// Base mood. Each subclass picks a target band by its own rule AND owns its
+        /// own transition logic via <see cref="Tick"/> — the appetite cycle's edges
+        /// are reified as the mood's self-evaluation, no central switch decides
+        /// "what comes next".
         /// </summary>
         private abstract class Mood
         {
             public abstract string Name { get; }
-            /// <summary>Minimum seconds the mood holds before considering a transition.</summary>
-            public abstract double MinDwell { get; }
-            /// <summary>Maximum seconds the mood holds; actual dwell is uniform in [Min, Max].</summary>
-            public abstract double MaxDwell { get; }
 
             /// <summary>
             /// Resolve a target band index per this mood's preference. Return -1 if no
@@ -350,83 +341,106 @@ public abstract class Steering
             public abstract int PickBand(Goal host);
 
             /// <summary>
-            /// Decide the next mood when this one's dwell expires. Default: pick any
-            /// other mood uniformly at random. Override for state-specific transitions
-            /// (e.g. always-follow chains, conditional yields on silence, etc.).
+            /// Called every tick. Return <c>this</c> to remain in the current mood, or
+            /// another mood instance to transition. Implementations typically gate on
+            /// the host's <see cref="Satiety"/> reaching a bound plus <see cref="MoodTime"/>
+            /// passing <see cref="MinDwell"/>, with a <see cref="MaxDwell"/> override so
+            /// the cycle still progresses under degenerate audio.
             /// </summary>
-            public virtual Mood OnDwellExpire(Goal host) => host.RandomMoodExcept(this);
+            public virtual Mood Tick(Goal host) => this;
+
+            /// <summary>
+            /// Satiety value the host resets to when this mood is entered. Default 0
+            /// ("freshly empty" — appropriate for hungry-style moods like Feeding).
+            /// Override to 1.0 for full-style moods like Sated, or any in-between
+            /// value for a mood that starts partially saturated.
+            /// </summary>
+            public virtual double InitialSatiety => 0.0;
         }
 
         /// <summary>
-        /// Chase whichever band is LOUDEST right now (max amplitude). Naturally
-        /// bass-biased because low frequencies dominate amplitude — the fairy
-        /// buzzes around the kick / sub.
+        /// HUNGRY: chase whichever band wins a <b>proximity-weighted loudness contest</b>:
+        /// <c>score(i) = bars[i] · exp(−Δi² / 2σ²)</c> where Δi is band-distance from the
+        /// goal's current X and σ = <see cref="ProximitySigmaFrac"/> · bandCount. From the
+        /// center of the screen this still elects the bass (dominant amplitude wins the
+        /// product even at moderate distance penalty), but from a far-side position the
+        /// mosquito will prefer a modest-loudness band right next to it rather than
+        /// pendulum-ing back across the screen to the bass every cycle. Combined with the
+        /// Sated anti-centroid trip this lets the goal <i>migrate</i> across the spectrum
+        /// over time instead of orbiting a single energy peak. Satiety fills as the goal
+        /// feeds; once it saturates (or MaxDwell elapses) we flip to <see cref="Sated"/>.
+        /// Entry satiety is the default 0 (just got empty).
         /// </summary>
-        private sealed class HuntPeak : Mood
+        private sealed class Feeding : Mood
         {
-            public override string Name => "HuntPeak";
-            public override double MinDwell => 2.5;
-            public override double MaxDwell => 5.0;
+            public override string Name => "Feeding";
             public override int PickBand(Goal host)
             {
                 var bars = host._bars.BarHeights;
-                int best = -1; double bestH = ActiveBandFloor;
+                if (bars.Length == 0) return -1;
+
+                double sigma = bars.Length * ProximitySigmaFrac;
+                double twoSigmaSq = 2.0 * sigma * sigma;
+                double currentIdx = host._currentBandIdx;
+
+                int best = -1;
+                double bestScore = 0.0;
                 for (int i = 0; i < bars.Length; i++)
                 {
-                    if (bars[i] > bestH) { bestH = bars[i]; best = i; }
+                    double height = bars[i];
+                    if (height <= ActiveBandFloor) continue;
+                    double d = i - currentIdx;
+                    double proximity = Math.Exp(-(d * d) / twoSigmaSq);
+                    double score = height * proximity;
+                    if (score > bestScore) { bestScore = score; best = i; }
                 }
                 return best;
+            }
+            public override Mood Tick(Goal host)
+            {
+                if (host._moodTime < MinDwell) return this;
+                if (host._satiety >= 1.0 || host._moodTime >= MaxDwell) return SatedMood;
+                return this;
             }
         }
 
         /// <summary>
-        /// Chase whichever band has the highest accumulated HEAT (smoothed,
-        /// sensitivity-corrected). Picks bands that have been "interesting" for a
-        /// while — drifts to where the musical pattern lives rather than where the
-        /// instantaneous peak is.
+        /// FULL: target the spectrum's <i>anti-centroid</i> — the band index mirroring
+        /// the spectral centroid (weighted-average band by amplitude). If energy is
+        /// concentrated in bass (centroid ≈ band 10), the anti-centroid is in treble
+        /// (≈ band 53) and the mosquito flies right to digest; if a treble passage
+        /// pulls the centroid right, the anti-centroid is left and it goes left. The
+        /// goal actively pulls AWAY from wherever loudness is concentrated rather than
+        /// just picking the marginally-smallest band. Satiety drains while away from
+        /// heat — slowly during transit (charge still moderate), faster once arrived
+        /// at the cold spot — and once it empties (or MaxDwell elapses) we flip back
+        /// to <see cref="Feeding"/>. Entry satiety overrides to 1.0 (just got full).
         /// </summary>
-        private sealed class HuntHeat : Mood
+        private sealed class Sated : Mood
         {
-            public override string Name => "HuntHeat";
-            public override double MinDwell => 3.0;
-            public override double MaxDwell => 6.0;
-            public override int PickBand(Goal host)
-            {
-                var heat = host._bars.BandHeat;
-                int best = -1; double bestH = WarmBandFloor;
-                for (int i = 0; i < heat.Length; i++)
-                {
-                    if (heat[i] > bestH) { bestH = heat[i]; best = i; }
-                }
-                return best;
-            }
-        }
-
-        /// <summary>
-        /// Seek the QUIETEST non-silent band — the most active band that's still dim.
-        /// Because bass dominates amplitude, this naturally biases right toward the
-        /// treble tail, giving the fairy a reason to explore the screen's right side
-        /// instead of perpetually hugging the left.
-        /// </summary>
-        private sealed class SeekQuiet : Mood
-        {
-            public override string Name => "SeekQuiet";
-            public override double MinDwell => 2.0;
-            public override double MaxDwell => 4.0;
+            public override string Name => "Sated";
+            public override double InitialSatiety => 1.0;
             public override int PickBand(Goal host)
             {
                 var bars = host._bars.BarHeights;
-                int best = -1; double bestH = double.MaxValue;
+                double sumQ = 0, sumWQ = 0;
                 for (int i = 0; i < bars.Length; i++)
                 {
-                    // Require minimum signal (skip dead bands), then take the smallest.
-                    if (bars[i] > ActiveBandFloor && bars[i] < bestH)
-                    {
-                        bestH = bars[i];
-                        best = i;
-                    }
+                    double q = bars[i];
+                    if (q <= 0) continue;
+                    sumWQ += i * q;
+                    sumQ  += q;
                 }
-                return best;
+                if (sumQ <= 0) return -1;  // silence → drift to spawn
+                double centroid = sumWQ / sumQ;
+                int anti = (int)Math.Round((bars.Length - 1) - centroid);
+                return Math.Clamp(anti, 0, bars.Length - 1);
+            }
+            public override Mood Tick(Goal host)
+            {
+                if (host._moodTime < MinDwell) return this;
+                if (host._satiety <= 0.0 || host._moodTime >= MaxDwell) return FeedingMood;
+                return this;
             }
         }
     }

@@ -64,6 +64,15 @@ public class World
     public Steering? Steering { get; protected set; }
 
     /// <summary>
+    /// Charge component: integrates a 0–1 "engagement" scalar from the surrounding
+    /// environment (typically a Reactivity sibling) at the entity's current position.
+    /// Read by other components via lambda wiring set up in the owning entity — e.g.
+    /// to gate physics triggers, drive a glow envelope, or trigger steering transitions.
+    /// Settable from subclass constructors via protected setter.
+    /// </summary>
+    public Components.Charge? Charge { get; protected set; }
+
+    /// <summary>
     /// Rendering component: draws the entity each frame.
     /// Settable from subclass constructors via protected setter.
     /// </summary>
@@ -93,6 +102,7 @@ public class World
     {
         Input?.Update(this, mouse, viewport, dt);
         Reactivity?.React(this, bands, viewport, dt);
+        Charge?.Update(this, viewport, dt);
         Steering?.Steer(this, viewport, dt);
         Physics?.ApplyForces(this, dt);
         Physics?.Integrate(this, dt);

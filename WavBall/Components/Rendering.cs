@@ -332,39 +332,67 @@ public abstract class Rendering
     #region Nested: Goal
     /// <summary>
     /// Goal-zone renderer: draws a glowing golden ring whose brightness is the product of
-    /// two signals — a slow <b>charge envelope</b> (from <see cref="Steering.Goal.Charge"/>,
-    /// supplied via <see cref="ChargeSource"/>) and a fast <b>pulse modulation</b>
-    /// (from <see cref="Reactivity.Bar"/> snare + energy). A fresh-spawned goal is
-    /// visibly depleted; as the steering locks onto loud bands it charges up and the
-    /// halo blooms; once charged it punches on every snare hit. Same charge feeds
-    /// <see cref="Physics.Goal.IsLive"/> so the visual state IS the gameplay state.
+    /// <summary>
+    /// Goal-zone renderer with a <b>two-layer envelope split</b> so the visual tells
+    /// both halves of the appetite story:
+    /// <list type="bullet">
+    ///   <item><description><b>Outer glow halo</b> — driven by the slow <see cref="Steering.Goal.Satiety"/> envelope (supplied via <see cref="SatietySource"/>). Bright while sated, dim while hungry. Tells the player "where am I in the appetite cycle".</description></item>
+    ///   <item><description><b>Inner ring + crosshair (reticle)</b> — driven by the fast <see cref="Charge.Goal.Value"/> envelope (supplied via <see cref="ChargeSource"/>). Bright iff the goal is currently on food. Tells the player "can I score right now" because <see cref="Physics.Goal.IsLive"/> follows the same charge signal.</description></item>
+    /// </list>
+    /// Both layers share a fast <b>pulse modulation</b> from <see cref="Reactivity.Bar"/>
+    /// (snare + energy) so the whole goal still punches on transients. Each layer
+    /// smooths its own slow envelope (<see cref="_glowPulse"/>, <see cref="_ringPulse"/>)
+    /// so the halo can be bright while the reticle is dim (sated, in transit through
+    /// cold mid-air — "I'm full but not on food") and vice versa (hungry but currently
+    /// near a small local heat source — "I can score but I'm still seeking").
     /// </summary>
     public sealed class Goal : Rendering
     {
         private readonly double _radius;
         private readonly Reactivity.Bar _bars;
 
-        /// <summary>Smoothed pulse value (0–1). Eased toward the live audio target so the glow doesn't strobe on raw flux spikes.</summary>
-        private double _pulse;
+        /// <summary>Smoothed pulse for the OUTER GLOW (satiety × modulation). Eased toward the live audio target so the halo doesn't strobe on raw flux spikes.</summary>
+        private double _glowPulse;
+
+        /// <summary>Smoothed pulse for the INNER RING + crosshair (charge × modulation). Same easing as glow; separate state so the two layers track their own envelopes.</summary>
+        private double _ringPulse;
 
         /// <summary>
-        /// Optional accessor for the goal's charge envelope (typically wired to
-        /// <see cref="Steering.Goal.Charge"/>). Returns 0–1; null defaults to 1.0 (always
-        /// fully charged) for standalone / legacy use.
+        /// Optional accessor for the goal's fast <b>charge</b> envelope (typically
+        /// wired to <see cref="Charge.Goal.Value"/>). Drives the inner ring + crosshair
+        /// brightness so the reticle's intensity tracks <see cref="Physics.Goal.IsLive"/>
+        /// — the player sees "I can score now" precisely when collision is enabled.
+        /// Returns 0–1; null defaults to 1.0 (always fully bright reticle).
         /// </summary>
         public Func<double>? ChargeSource { get; set; }
+
+        /// <summary>
+        /// Optional accessor for the goal's slow <b>satiety</b> envelope (typically
+        /// wired to <see cref="Steering.Goal.Satiety"/>). Drives the outer glow halo
+        /// brightness so the halo's intensity tracks the appetite-cycle state
+        /// independently of instantaneous food contact. Returns 0–1; null falls back
+        /// to <see cref="ChargeSource"/> (or 1.0) so a renderer with only one source
+        /// wired still behaves sensibly.
+        /// </summary>
+        public Func<double>? SatietySource { get; set; }
 
         /// <summary>Per-frame exponential lerp factor for the pulse — fast enough to feel responsive, slow enough to read as a glow rather than a flicker.</summary>
         private const double PulseLerpRate = 0.25;
 
-        /// <summary>Snare contribution to pulse modulation (per unit SnareFlux). Snare hits punch the glow brighter.</summary>
-        private const double SnareGain = 0.65;
+        /// <summary>Snare contribution to the INNER reticle pulse (per unit SnareFlux). The gold reticle punches on every snare hit — fast transients in the 1–5 kHz region.</summary>
+        private const double SnareGain = 0.85;
 
-        /// <summary>Energy contribution to pulse modulation (per unit Energy). Smooth musical activity raises the floor.</summary>
-        private const double EnergyGain = 0.45;
+        /// <summary>Bass contribution to the OUTER halo pulse (per unit BassFlux). The cyan halo swells with kick / sub-bass activity — slow transients in the 30–200 Hz region. Decoupling treble (inner) from bass (outer) lets the two layers throb on independent rhythmic schedules.</summary>
+        private const double BassGain = 0.85;
+
+        /// <summary>Continuous-energy contribution shared by both layers (per unit Energy). Smooth musical activity raises the floor of both pulses so they don't go fully silent between transients.</summary>
+        private const double EnergyGain = 0.30;
 
         /// <summary>Minimum modulation value when charged — so even silent-music pulse stays visibly above the floor.</summary>
         private const double ModulationFloor = 0.40;
+
+        /// <summary>How much the satiety halo's radius grows above the base reticle radius at full satiety. 0.60 ⇒ halo at 1.6× radius when fully sated, 1.0× when empty. Makes "I'm full" visually obvious as a physical swelling that's impossible to miss even from across the screen.</summary>
+        private const double HaloRadiusGain = 0.60;
 
         /// <summary>
         /// When false, the goal is suppressed and not rendered at all.
@@ -420,36 +448,71 @@ public abstract class Rendering
             _visualOffset += (targetOffset - _visualOffset) * OffsetLerpRate;
             var pos = entity.Position + _visualOffset;
 
-            // ── Charge envelope × audio modulation ──
-            // Two-factor pulse: charge (slow, 0..1) gates overall presence; modulation
-            // (fast, snare + energy) gives per-frame punch. Their PRODUCT is what drives
-            // every alpha channel below — so a depleted goal is nearly invisible no matter
-            // how loud the music, and a fully-charged goal still pulses dramatically on
-            // transients instead of sitting at constant luminosity.
-            double charge = Math.Clamp(ChargeSource?.Invoke() ?? 1.0, 0, 1);
-            double modulation = Math.Clamp(_bars.SnareFlux * SnareGain + _bars.Energy * EnergyGain, 0, 1);
-            double target = charge * (ModulationFloor + (1.0 - ModulationFloor) * modulation);
-            _pulse += (target - _pulse) * PulseLerpRate;
-            double pulse = Math.Clamp(_pulse, 0, 1);
+            // ── Two-layer envelope split + independent rhythm modulation ──
+            // Each visual layer multiplies its own slow envelope (charge OR satiety)
+            // by its OWN fast modulation: inner = snare/treble, outer = bass. With
+            // the two pulse signals decoupled the gold reticle can punch on a snare
+            // hit while the cyan halo holds steady, and the halo can swell on a kick
+            // while the reticle stays calm — the two throbs happen on different
+            // rhythmic schedules instead of locked together.
+            double charge   = Math.Clamp(ChargeSource?.Invoke() ?? 1.0, 0, 1);
+            double satiety  = Math.Clamp(SatietySource?.Invoke() ?? charge, 0, 1);
 
-            // Outer glow — most dramatic dynamic range: depleted ≈ invisible halo,
-            // charged + loud ≈ big bright halo. Thickness also scales so the halo
-            // physically blooms as the goal arms.
-            byte glowAlpha = (byte)(10 + 210 * pulse);   // 10..220
-            var glowPen = new Pen(new SolidColorBrush(Color.FromArgb(glowAlpha, 255, 215, 0)), 4 + 16 * pulse);
-            glowPen.Freeze();
-            dc.DrawEllipse(null, glowPen, pos, _radius, _radius);
+            double snareMod = Math.Clamp(_bars.SnareFlux * SnareGain + _bars.Energy * EnergyGain, 0, 1);
+            double bassMod  = Math.Clamp(_bars.BassFlux  * BassGain  + _bars.Energy * EnergyGain, 0, 1);
+            double snareFactor = ModulationFloor + (1.0 - ModulationFloor) * snareMod;
+            double bassFactor  = ModulationFloor + (1.0 - ModulationFloor) * bassMod;
 
-            // Inner ring — always faintly visible (so the player can see where the goal IS
-            // even when uncharged), but brightens dramatically with charge × pulse.
-            byte ringAlpha = (byte)(60 + 195 * pulse);   // 60..255
+            double glowTarget = satiety * bassFactor;
+            double ringTarget = charge  * snareFactor;
+            _glowPulse += (glowTarget - _glowPulse) * PulseLerpRate;
+            _ringPulse += (ringTarget - _ringPulse) * PulseLerpRate;
+            double glowPulse = Math.Clamp(_glowPulse, 0, 1);
+            double ringPulse = Math.Clamp(_ringPulse, 0, 1);
+
+            // Outer satiety halo — drawn in a distinct COOL color (cyan) at a radius
+            // that GROWS with satiety, so the player sees the goal physically swell
+            // with fullness and shrink as it digests. The categorical hue + size split
+            // from the warm-gold reticle below makes the two signals unmistakable:
+            // cyan aura tells the appetite story, gold reticle tells the collision
+            // story. Drawn first so the gold reticle composites on top.
+            double haloRadius = _radius * (1.0 + HaloRadiusGain * glowPulse);
+            byte haloAlpha = (byte)(60 + 195 * glowPulse);   // 60..255
+            var haloPen = new Pen(new SolidColorBrush(Color.FromArgb(haloAlpha, 80, 220, 255)), 4 + 12 * glowPulse);
+            haloPen.Freeze();
+            dc.DrawEllipse(null, haloPen, pos, haloRadius, haloRadius);
+
+            // Gold bloom layer — wide, soft, charge-driven. Sits BEHIND the crisp inner
+            // ring and gives the reticle actual luminance/bloom when collidable: the
+            // reticle stops being a thin line and reads as an emitting source. Same
+            // gold hue as the ring + crosshair so they composite as one "hot" layer;
+            // wider stroke + lower opacity makes it feel like spill light rather than
+            // a separate ring. Fades to ZERO at low charge so an uncharged goal has
+            // no bloom at all — the reticle's dim, line-only appearance is the
+            // "not collidable right now" signal.
+            byte bloomAlpha = (byte)(200 * ringPulse);   // 0..200
+            var bloomPen = new Pen(new SolidColorBrush(Color.FromArgb(bloomAlpha, 255, 215, 0)), 4 + 14 * ringPulse);
+            bloomPen.Freeze();
+            dc.DrawEllipse(null, bloomPen, pos, _radius, _radius);
+
+            // Inner ring — charge story / collidability indicator. Warm gold against
+            // the cool cyan halo for unambiguous read. Faintly visible at low charge
+            // (so the player can still see where the goal IS while it's pass-through),
+            // brightens dramatically the moment the goal lands on food and arms
+            // collision. The dim resting state is the "not collidable" signal and is
+            // intentional — don't raise its floor.
+            byte ringAlpha = (byte)(50 + 205 * ringPulse);   // 50..255
             var ringPen = new Pen(new SolidColorBrush(Color.FromArgb(ringAlpha, 255, 215, 0)), 3);
             ringPen.Freeze();
             dc.DrawEllipse(null, ringPen, pos, _radius, _radius);
 
-            // Small crosshair at center
-            byte crossAlpha = (byte)(40 + 180 * pulse);  // 40..220
-            var crossPen = new Pen(new SolidColorBrush(Color.FromArgb(crossAlpha, 255, 215, 0)), 1);
+            // Crosshair reticle — same charge story as the inner ring; fades with charge
+            // so the dim resting state continues to signal "not collidable". Stroke
+            // width also scales with charge so a charged reticle reads as a confident
+            // bold crosshair rather than a hairline that's easy to miss against busy
+            // spectrum bars behind.
+            byte crossAlpha = (byte)(35 + 220 * ringPulse);  // 35..255
+            var crossPen = new Pen(new SolidColorBrush(Color.FromArgb(crossAlpha, 255, 215, 0)), 1 + 2 * ringPulse);
             crossPen.Freeze();
             double c = 6;
             dc.DrawLine(crossPen, new Point(pos.X - c, pos.Y), new Point(pos.X + c, pos.Y));

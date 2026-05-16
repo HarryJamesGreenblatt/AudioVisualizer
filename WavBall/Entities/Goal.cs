@@ -28,12 +28,24 @@ public sealed class Goal : World
             _goalPhysics.Enabled = value;
             _goalRendering.Enabled = value;
             _goalSteering.Enabled = value;
+            _goalCharge.Enabled = value;
         }
     }
 
     private readonly Physics.Goal _goalPhysics;
     private readonly Steering.Goal _goalSteering;
     private readonly Rendering.Goal _goalRendering;
+    private readonly Charge.Goal _goalCharge;
+
+    /// <summary>
+    /// Minimum <see cref="Steering.Goal.Satiety"/> required for the goal to be
+    /// collidable. A freshly-spawned goal sits at satiety 0 and is intentionally
+    /// pass-through for the first ~1 s of feeding; once it crosses this line it
+    /// stays collidable through the entire Sated traverse — even when crossing
+    /// cold mid-air zones where instantaneous charge is near zero — until satiety
+    /// drains back below the threshold at the destination.
+    /// </summary>
+    private const double ArmSatietyThreshold = 0.20;
 
     /// <summary>
     /// Construct a goal at the given position, watching the specified ball for overlap and
@@ -42,21 +54,41 @@ public sealed class Goal : World
     /// </summary>
     public Goal(Point position, double radius, World ball, Reactivity.Bar bars)
     {
+        // Hover offset shared between the steering target and the charge field's
+        // feeding-zone centers — the goal hovers this many pixels above each bar's
+        // top, and the Gaussian sensor centers its zones at the same point.
+        const double hoverOffset = 35.0;
+
         Position = position;
         Radius = radius;
         _goalPhysics   = new Physics.Goal(radius, ball);
         _goalSteering  = new Steering.Goal(radius, position, bars);
         _goalRendering = new Rendering.Goal(radius, bars) { BallRef = ball };
+        _goalCharge    = new Charge.Goal(bars, hoverOffset);
 
-        // Wire the steering's charge state into the other two components so the goal
-        // can only score once it's musically engaged AND visually shows that state.
-        // Composition lives here in the entity; components stay decoupled.
-        _goalPhysics.IsLive = () => _goalSteering.IsArmed;
-        _goalRendering.ChargeSource = () => _goalSteering.Charge;
+        // Wire the appetite signals between components. Composition lives here in
+        // the entity; components stay decoupled.
+        //
+        //   Steering    ← Charge.Value      (sensor feeds satiety integrator)
+        //   Physics     ← Steering.Satiety  (slow integrated fullness gates collision)
+        //   Rendering   ← Charge.Value      AND  Steering.Satiety  (two-layer visual)
+        //
+        // The renderer takes both signals: the inner ring + crosshair (reticle) tracks
+        // charge so the player sees instantaneous "I can score now" intensity, while the
+        // outer glow halo tracks satiety so the player sees the slow appetite-cycle
+        // state independently of food contact. Physics arming follows satiety so a
+        // Sated goal stays collidable across cold mid-air transits — the reticle's
+        // dimmer-but-not-dark appearance during that traverse is the *correct* signal:
+        // "I'm full, between bites, but still scoreable."
+        _goalSteering.ChargeSource    = () => _goalCharge.Value;
+        _goalPhysics.IsLive           = () => _goalSteering.Satiety > ArmSatietyThreshold;
+        _goalRendering.ChargeSource   = () => _goalCharge.Value;
+        _goalRendering.SatietySource  = () => _goalSteering.Satiety;
 
         Physics   = _goalPhysics;
         Steering  = _goalSteering;
         Rendering = _goalRendering;
+        Charge    = _goalCharge;
     }
 
     /// <summary>

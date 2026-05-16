@@ -38,6 +38,8 @@ public abstract class Reactivity
         private float _fluxMax = 0.01f;
         private float _snareFlux;
         private float _snareFluxMax = 0.01f;
+        private float _bassFlux;
+        private float _bassFluxMax = 0.01f;
 
         /// <summary>Scaled bar heights (pixels), updated each frame audio arrives.</summary>
         public float[] BarHeights { get; private set; } = [];
@@ -66,6 +68,15 @@ public abstract class Reactivity
         /// near-zero otherwise. Use for burst particle spawning on snare transients.
         /// </summary>
         public float SnareFlux => _snareFlux;
+
+        /// <summary>
+        /// Bass-band spectral flux (0–1). Isolated to mel bands 0–7 (~30–200 Hz)
+        /// where sub-bass and kick fundamentals live. Spikes on kick hits and bass-note
+        /// onsets, near-zero on melodic/treble passages with no low-end activity.
+        /// Symmetric counterpart to <see cref="SnareFlux"/> — use one for treble-driven
+        /// pulses and the other for bass-driven swells so the two can throb independently.
+        /// </summary>
+        public float BassFlux => _bassFlux;
 
         /// <summary>
         /// Per-band thermal charge (0–1). Each band accumulates heat from sustained
@@ -152,11 +163,15 @@ public abstract class Reactivity
             // Unlike RMS (loudness), flux has wide dynamic range: near-zero on sustains,
             // peaks hard on transient attacks. Normalized against a tracking max.
             // Snare band range: mel bands 12–25 (~1–5 kHz: snare body + wire shimmer)
+            // Bass band range:  mel bands  0– 7 (~30–200 Hz: sub-bass + kick fundamentals)
             const int snareLoB = 12;
             const int snareHiB = 25;
+            const int bassLoB  = 0;
+            const int bassHiB  = 7;
 
             float flux = 0;
             float snareRawFlux = 0;
+            float bassRawFlux = 0;
             for (int i = 0; i < bands.Length; i++)
             {
                 float diff = bands[i] - _prevBands[i];
@@ -164,6 +179,7 @@ public abstract class Reactivity
                 {
                     flux += diff;
                     if (i >= snareLoB && i <= snareHiB) snareRawFlux += diff;
+                    if (i >= bassLoB  && i <= bassHiB)  bassRawFlux  += diff;
                 }
                 _prevBands[i] = bands[i];
             }
@@ -187,6 +203,20 @@ public abstract class Reactivity
             float snareAlpha = instantSnare > _snareFlux ? snareAttack : snareRelease;
             _snareFlux = _snareFlux + snareAlpha * (instantSnare - _snareFlux);
             _snareFlux = Math.Clamp(_snareFlux, 0f, 1f);
+
+            // Bass flux: same adaptive normalization, slightly longer decay (~1.2s) so
+            // sustained sub-bass keeps the halo swelling between kicks rather than
+            // re-collapsing every ~half-second. Bass attack is also a touch slower than
+            // snare attack since kick fundamentals are broader transients perceptually.
+            if (bassRawFlux > _bassFluxMax) _bassFluxMax = bassRawFlux;
+            else _bassFluxMax = Math.Max(0.01f, _bassFluxMax * MathF.Exp(-dt / 1.2f));
+
+            float instantBass = Math.Clamp(bassRawFlux / _bassFluxMax, 0f, 1f);
+            float bassAttack  = 1f - MathF.Exp(-dt / 0.020f);  // ~20ms
+            float bassRelease = 1f - MathF.Exp(-dt / 0.25f);   // ~250ms
+            float bassAlpha = instantBass > _bassFlux ? bassAttack : bassRelease;
+            _bassFlux = _bassFlux + bassAlpha * (instantBass - _bassFlux);
+            _bassFlux = Math.Clamp(_bassFlux, 0f, 1f);
 
             // Asymmetric smoothing: very fast attack (~15ms), moderate release (~150ms)
             // so rain/luminosity respond to individual hits but don't strobe.
