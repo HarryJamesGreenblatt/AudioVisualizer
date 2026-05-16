@@ -17,8 +17,8 @@ A real-time audio spectrum visualizer and physics game for Windows built with WP
 - **Interactive Ball Physics** — 7 unique ball types (beach ball → bowling ball) with Newtonian physics, drag-and-throw interaction, and collision against the live spectrum surface
 - **Audio-Driven Rain** — variable-size raindrops with parallax depth, bass-driven wind, snare-burst spawning, and motion-blur trail rendering
 - **Game Mode** — stage-based progression: guide each ball into a golden goal ring using the music itself as the playing field, with anti-cheat and particle burst scoring effects
-- **Autonomous Goal Agent** — the goal is a "mosquito" that hunts for musical energy: a two-dimensional appetite machine (Charge sensor + Satiety integrator) cycles between Feeding (proximity-weighted loudest band) and Sated (anti-centroid of the spectrum), so it migrates across the playing field on a polyrhythmic schedule rather than locking to one peak
-- **Dual-Layer Goal Visual** — a cool cyan halo that grows with appetite-cycle state and pulses with bass kicks, around a warm gold reticle whose brightness tracks instantaneous collidability and punches on snare hits — two orthogonal signals on two orthogonal visual axes
+- **Autonomous Goal Agent** — the goal is a "mosquito" that hunts for musical energy: a two-dimensional appetite machine (Charge sensor + Satiety integrator) cycles between Feeding (proximity-weighted loudest band) and Sated (retreats to a randomized altitude above the action via anti-centroid X), so it migrates across the playing field on a polyrhythmic schedule rather than locking to one peak
+- **Dual-Layer Goal Visual** — a cool cyan halo that grows with appetite-cycle state and pulses with bass kicks, around a warm gold ring that deforms into an oscilloscope-style squiggle on snare hits (high-frequency sinusoidal radial perturbation with exponential ring-out) — geometric shape encodes transient energy while brightness encodes collidability
 - **Per-Band Thermal Luminosity** — bars glow brighter with sustained activity; treble bands charge faster
 
 ## Architecture
