@@ -17,6 +17,8 @@ A real-time audio spectrum visualizer and physics game for Windows built with WP
 - **Interactive Ball Physics** — 7 unique ball types (beach ball → bowling ball) with Newtonian physics, drag-and-throw interaction, and collision against the live spectrum surface
 - **Audio-Driven Rain** — variable-size raindrops with parallax depth, bass-driven wind, snare-burst spawning, and motion-blur trail rendering
 - **Game Mode** — stage-based progression: guide each ball into a golden goal ring using the music itself as the playing field, with anti-cheat and particle burst scoring effects
+- **Autonomous Goal Agent** — the goal is a "mosquito" that hunts for musical energy: a two-dimensional appetite machine (Charge sensor + Satiety integrator) cycles between Feeding (proximity-weighted loudest band) and Sated (anti-centroid of the spectrum), so it migrates across the playing field on a polyrhythmic schedule rather than locking to one peak
+- **Dual-Layer Goal Visual** — a cool cyan halo that grows with appetite-cycle state and pulses with bass kicks, around a warm gold reticle whose brightness tracks instantaneous collidability and punches on snare hits — two orthogonal signals on two orthogonal visual axes
 - **Per-Band Thermal Luminosity** — bars glow brighter with sustained activity; treble bands charge faster
 
 ## Architecture
@@ -26,9 +28,10 @@ WavBall/
 ├── Components/
 │   ├── Input.cs              # Mouse drag interaction
 │   ├── Physics.cs            # Newtonian physics (ball, peak, particle, goal trigger)
-│   ├── Reactivity.cs         # Audio-reactive behavior (bars, rain emitter)
-│   ├── Rendering.cs          # Visual rendering (bars, peaks, ball, particles, goal)
-│   └── Steering.cs           # Autonomous-agent motion (goal mood machine + capacitance charge)
+│   ├── Reactivity.cs         # Audio-reactive behavior (bars w/ Energy/SnareFlux/BassFlux/BandHeat, rain emitter)
+│   ├── Rendering.cs          # Visual rendering (bars, peaks, ball, particles, two-layer goal)
+│   ├── Steering.cs           # Autonomous-agent motion (goal two-dimensional appetite machine)
+│   └── Charge.cs             # Spatial-audio sensor (Gaussian-KDE potential + asymmetric capacitor)
 ├── Configuration/
 │   └── BallPreset.cs         # 7-stage ball catalog (kind, mass, COR, drag)
 ├── Entities/
