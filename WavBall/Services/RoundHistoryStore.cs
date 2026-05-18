@@ -28,18 +28,25 @@ internal sealed class RoundHistoryStore
         bool isPb = !_bests.TryGetValue(kind, out var prev) || elapsed < prev;
         if (isPb) _bests[kind] = elapsed;
 
-        var record = new RoundRecord(kind, ballName, elapsed) { IsPersonalBest = isPb };
+        var record = new RoundRecord(kind, ballName, elapsed) { IsPersonalBest = isPb, IsLatest = true };
 
         if (_indexByKind.TryGetValue(kind, out int idx))
         {
-            // Clobber existing entry — clear old PB flag on all entries for this kind
-            // since PB status may have changed
+            // Clobber existing entry.
+            // Clear IsLatest from the previously highlighted slot only when it differs
+            // (same slot: old object is being replaced, no need to mutate it).
+            if (LastUpdatedIndex >= 0 && LastUpdatedIndex != idx)
+                Records[LastUpdatedIndex].IsLatest = false;
+
             Records[idx] = record;
             LastUpdatedIndex = idx;
         }
         else
         {
-            // New kind — append in stage order
+            // New kind — clear previous latest, then append.
+            if (LastUpdatedIndex >= 0)
+                Records[LastUpdatedIndex].IsLatest = false;
+
             Records.Add(record);
             int newIdx = Records.Count - 1;
             _indexByKind[kind] = newIdx;

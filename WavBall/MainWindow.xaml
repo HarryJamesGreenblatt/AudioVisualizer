@@ -199,7 +199,7 @@
                         </Grid>
                     </Border>
 
-                    <!-- ④ Timer header + LED readout (full-width, matching section headers) -->
+                    <!-- ⑤ Timer header + LED readout (full-width, matching section headers) -->
                     <Border DockPanel.Dock="Top" Background="#FF1C3050" Padding="8,4">
                         <TextBlock Text="Timer"
                                    Foreground="#FF90C4E8"
@@ -227,6 +227,67 @@
                                    FontSize="10" FontWeight="Bold"
                                    HorizontalAlignment="Center"/>
                     </Border>
+
+                    <!-- ④ Now Playing — anchored to bottom, hidden when no session is active -->
+                    <StackPanel DockPanel.Dock="Bottom">
+                        <Border x:Name="NowPlayingHeader"
+                                Background="#FF1C3050"
+                                Padding="8,5"
+                                Visibility="Collapsed">
+                            <TextBlock Text="Now Playing"
+                                       Foreground="#FF90C4E8"
+                                       FontFamily="{StaticResource WmpChromeFontFamily}"
+                                       FontSize="11" FontWeight="Bold"
+                                       HorizontalAlignment="Center"/>
+                        </Border>
+                        <Border x:Name="NowPlayingContent"
+                                Background="#FF0A1020"
+                                Padding="8,6"
+                                Visibility="Collapsed">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <!-- Composite square: app icon underneath, album art on top -->
+                                <Border Grid.Column="0"
+                                        Width="48" Height="48"
+                                        Background="#FF0D1828"
+                                        BorderBrush="#FF2A4878"
+                                        BorderThickness="1"
+                                        ClipToBounds="True"
+                                        Margin="0,0,8,0">
+                                    <Grid>
+                                        <Image x:Name="NowPlayingAppIcon"
+                                               RenderOptions.BitmapScalingMode="HighQuality"
+                                               Stretch="UniformToFill"/>
+                                        <Image x:Name="NowPlayingAlbumArt"
+                                               RenderOptions.BitmapScalingMode="HighQuality"
+                                               Stretch="UniformToFill"/>
+                                    </Grid>
+                                </Border>
+                                <!-- Track text -->
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock x:Name="NowPlayingApp"
+                                               Foreground="#FF5A8AB0"
+                                               FontFamily="{StaticResource WmpChromeFontFamily}"
+                                               FontSize="9"
+                                               TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock x:Name="NowPlayingTitle"
+                                               Foreground="White"
+                                               FontFamily="{StaticResource WmpChromeFontFamily}"
+                                               FontSize="10" FontWeight="Bold"
+                                               TextTrimming="CharacterEllipsis"
+                                               Margin="0,2,0,0"/>
+                                    <TextBlock x:Name="NowPlayingArtist"
+                                               Foreground="#FF90C4E8"
+                                               FontFamily="{StaticResource WmpChromeFontFamily}"
+                                               FontSize="9"
+                                               TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
 
                     <!-- ⑥ Round history list (fills remaining height, like WMP9 playlist) -->
                     <ListBox x:Name="RoundHistoryList"
@@ -283,7 +344,7 @@
                                     </Grid.Triggers>
                                 </Grid>
                                 <DataTemplate.Triggers>
-                                    <DataTrigger Binding="{Binding IsPersonalBest}" Value="True">
+                                    <DataTrigger Binding="{Binding IsLatest}" Value="True">
                                         <Setter TargetName="NameTb" Property="Foreground" Value="#FFFFD080"/>
                                         <Setter TargetName="TimeTb" Property="Foreground" Value="#FFFFD080"/>
                                     </DataTrigger>

@@ -1,6 +1,9 @@
+using System.Diagnostics;
+using System.IO;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Interop;
 using WavBall.Configuration;
 using WavBall.Models;
 using WavBall.Services;
@@ -25,6 +28,7 @@ public partial class MainWindow : Window
     private bool _suppressVolumeSync;
     private readonly RoundHistoryStore _history = new();
     private int _lastPanelStage = -1;
+    private NowPlayingService? _nowPlaying;
 
     // Real-world display values per stage (same order as BallPreset.Stages).
     private static readonly (string Mass, string Radius)[] _ballRealWorld =
@@ -56,6 +60,9 @@ public partial class MainWindow : Window
         // Side panel wiring.
         RoundHistoryList.ItemsSource = _history.Records;
         Visualizer.RoundCompleted += OnRoundCompleted;
+
+        // Start GSMTCS session tracker (fire-and-forget; hidden until data arrives).
+        _ = InitNowPlayingAsync();
 
         // Hook into the WPF compositor for smooth 60fps redraws
         CompositionTarget.Rendering += OnRendering;
@@ -149,6 +156,7 @@ public partial class MainWindow : Window
         CompositionTarget.Rendering -= OnRendering;
         _capture.Dispose();
         _volume.Dispose();
+        _nowPlaying?.Dispose();
     }
 
     private void PrevTrackButton_Click(object sender, RoutedEventArgs e) => MediaKeyService.PrevTrack();
@@ -177,6 +185,91 @@ public partial class MainWindow : Window
     private void OnRoundCompleted(BallKind kind, string ballName, TimeSpan elapsed)
     {
         _history.Add(kind, ballName, elapsed);
+    }
+
+    // ── Now Playing ──────────────────────────────────────────────────────────
+
+    private async Task InitNowPlayingAsync()
+    {
+        try
+        {
+            _nowPlaying = await NowPlayingService.CreateAsync();
+            _nowPlaying.Changed += OnNowPlayingChanged;
+            OnNowPlayingChanged();          // render current session immediately
+        }
+        catch { /* GSMTCS unavailable — section stays hidden */ }
+    }
+
+    // Changed fires on a background thread; marshal to UI thread.
+    private void OnNowPlayingChanged() =>
+        Dispatcher.BeginInvoke(new Action(async () => await UpdateNowPlayingUIAsync()));
+
+    private async Task UpdateNowPlayingUIAsync()
+    {
+        if (_nowPlaying is not { HasSession: true })
+        {
+            NowPlayingHeader.Visibility  = Visibility.Collapsed;
+            NowPlayingContent.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        NowPlayingHeader.Visibility  = Visibility.Visible;
+        NowPlayingContent.Visibility = Visibility.Visible;
+        NowPlayingApp.Text    = NowPlayingService.FormatAppName(_nowPlaying.SourceAppUserModelId);
+        NowPlayingTitle.Text  = _nowPlaying.Title;
+        NowPlayingArtist.Text = _nowPlaying.Artist;
+
+        // App icon (synchronous — fast P/Invoke for unpackaged apps like Spotify.exe)
+        NowPlayingAppIcon.Source = ExtractProcessIcon(_nowPlaying.SourceAppUserModelId);
+
+        // Album art (async stream decode; continuation runs on UI thread via captured SyncContext)
+        NowPlayingAlbumArt.Source = await LoadAlbumArtAsync(_nowPlaying.ThumbnailRef);
+    }
+
+    /// <summary>
+    /// Extracts the 48×48 icon from the running process whose AUMID is an exe name.
+    /// Returns null for packaged (Store) apps or when the process isn't found.
+    /// </summary>
+    private static ImageSource? ExtractProcessIcon(string aumid)
+    {
+        if (!aumid.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) return null;
+        string procName = Path.GetFileNameWithoutExtension(aumid);
+        var procs = Process.GetProcessesByName(procName);
+        if (procs.Length == 0) return null;
+        try
+        {
+            string? path = procs[0].MainModule?.FileName;
+            if (path is null) return null;
+            using var icon = System.Drawing.Icon.ExtractAssociatedIcon(path);
+            if (icon is null) return null;
+            var src = Imaging.CreateBitmapSourceFromHIcon(
+                icon.Handle, Int32Rect.Empty, BitmapSizeOptions.FromWidthAndHeight(48, 48));
+            src.Freeze();
+            return src;
+        }
+        catch { return null; }
+        finally { foreach (var p in procs) p.Dispose(); }
+    }
+
+    /// <summary>
+    /// Decodes the GSMTCS thumbnail into a frozen BitmapImage on the UI thread.
+    /// </summary>
+    private static async Task<ImageSource?> LoadAlbumArtAsync(
+        Windows.Storage.Streams.IRandomAccessStreamReference? thumbRef)
+    {
+        if (thumbRef is null) return null;
+        try
+        {
+            using var winrtStream = await thumbRef.OpenReadAsync();
+            var bmp = new BitmapImage();
+            bmp.BeginInit();
+            bmp.StreamSource = winrtStream.AsStreamForRead();
+            bmp.CacheOption  = BitmapCacheOption.OnLoad;
+            bmp.EndInit();
+            bmp.Freeze();
+            return bmp;
+        }
+        catch { return null; }
     }
 
     private static BitmapImage BallSpriteImage(BallKind kind)

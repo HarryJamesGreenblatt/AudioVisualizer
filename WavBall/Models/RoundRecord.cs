@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using WavBall.Configuration;
 
 namespace WavBall.Models;
@@ -6,12 +7,27 @@ namespace WavBall.Models;
 /// Immutable data for one completed game round (ball reached the goal).
 /// Bound directly to the WMP9-style history ListBox in the side panel.
 /// </summary>
-public sealed class RoundRecord
+public sealed class RoundRecord : INotifyPropertyChanged
 {
     public BallKind Kind          { get; }
     public string   BallName      { get; }
     public TimeSpan Elapsed       { get; }
     public bool     IsPersonalBest { get; internal set; }
+
+    private bool _isLatest;
+    /// <summary>True for the most recently completed round. Drives the amber highlight.</summary>
+    public bool IsLatest
+    {
+        get => _isLatest;
+        internal set
+        {
+            if (_isLatest == value) return;
+            _isLatest = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsLatest)));
+        }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
 
     /// <summary>MM:SS.cc formatted elapsed time — bindable property for the DataTemplate.</summary>
     public string ElapsedFormatted =>
