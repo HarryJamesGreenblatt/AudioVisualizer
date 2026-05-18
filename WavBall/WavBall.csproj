@@ -24,6 +24,10 @@
     <Resource Include="Assets\Generated\*.png" />
     <Resource Include="Assets\Images\Icon.png" />
     <Resource Include="Assets\Images\Icon.ico" />
+    <!-- WMP9 Corona sprite slices (sliced from gitignored .bmp atlases via
+         Scripts\Slice-WmpSprites.ps1; magenta keyed to alpha). -->
+    <Resource Include="Assets\Sprites\*.png" />
+    <SplashScreen Include="Assets\Images\Splash.png" />
   </ItemGroup>
 
 </Project>

@@ -211,4 +211,231 @@
         </Setter>
     </Style>
 
+    <!-- ===== Sprite button: transparent template that renders only its content =====
+         Used for sprite-based transport buttons (Image content). Hover gives a
+         subtle brighten via DropShadow glow; pressed dims slightly to give a
+         "push" feel without inverting the artwork. -->
+    <Style x:Key="WmpSpriteButtonStyle" TargetType="Button">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid x:Name="root">
+                        <ContentPresenter x:Name="cp"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="cp" Property="Effect">
+                                <Setter.Value>
+                                    <DropShadowEffect Color="#FFB8DCF4" BlurRadius="6"
+                                                      ShadowDepth="0" Opacity="0.9"/>
+                                </Setter.Value>
+                            </Setter>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="cp" Property="Opacity" Value="0.75"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ===== MIC glyph (capsule + stand, in a 10x10 box) ===== -->
+    <Geometry x:Key="WmpMicGeometry">M3.5,0.5 H6.5 Q8,0.5 8,2 V5 Q8,6.5 6.5,6.5 H3.5 Q2,6.5 2,5 V2 Q2,0.5 3.5,0.5 Z M5,7 V9 M3,9 H7</Geometry>
+
+    <!-- ===== ToggleButton variant of the glass-bead transport style =====
+         Same shape & body as the regular bead, but supports an IsChecked
+         trigger that swaps the body to amber-glow when active. -->
+    <Style x:Key="WmpTransportButtonStyleToggle" TargetType="ToggleButton">
+        <Setter Property="Width"  Value="32"/>
+        <Setter Property="Height" Value="32"/>
+        <Setter Property="Background" Value="{StaticResource WmpBeadBodyBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource WmpBeadRimBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
+        <Setter Property="ToolTip" Value="Click to mix microphone into the visualizer"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToggleButton">
+                    <Grid x:Name="root">
+                        <!-- Amber outer glow (visible only when checked) -->
+                        <Ellipse x:Name="glow"
+                                 Margin="-3"
+                                 Fill="Transparent"
+                                 IsHitTestVisible="False"
+                                 Opacity="0">
+                            <Ellipse.Effect>
+                                <DropShadowEffect Color="{StaticResource WmpPlayAmberColor}"
+                                                  BlurRadius="10" ShadowDepth="0"/>
+                            </Ellipse.Effect>
+                        </Ellipse>
+                        <!-- Outer dark rim + body -->
+                        <Ellipse x:Name="body"
+                                 Stroke="{TemplateBinding BorderBrush}"
+                                 StrokeThickness="{TemplateBinding BorderThickness}"
+                                 Fill="{TemplateBinding Background}"/>
+                        <!-- Specular highlight -->
+                        <Ellipse x:Name="specular"
+                                 Margin="3,2,3,12"
+                                 Fill="{StaticResource WmpBeadSpecularBrush}"
+                                 Opacity="0.85"
+                                 IsHitTestVisible="False"/>
+                        <!-- MIC glyph -->
+                        <Path x:Name="glyph"
+                              Data="{StaticResource WmpMicGeometry}"
+                              Fill="{StaticResource WmpStopGlyphBrush}"
+                              Stretch="Uniform"
+                              Width="10" Height="10"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="specular" Property="Opacity" Value="1.0"/>
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <!-- Amber-gradient body when LIVE -->
+                            <Setter TargetName="body" Property="Fill">
+                                <Setter.Value>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                        <GradientStop Offset="0.0" Color="#FFFFD8A0"/>
+                                        <GradientStop Offset="0.5" Color="{StaticResource WmpPlayAmberColor}"/>
+                                        <GradientStop Offset="1.0" Color="#FFB04500"/>
+                                    </LinearGradientBrush>
+                                </Setter.Value>
+                            </Setter>
+                            <Setter TargetName="body"  Property="Stroke" Value="#FFFFB060"/>
+                            <Setter TargetName="glyph" Property="Fill"   Value="#FF2B1500"/>
+                            <Setter TargetName="glow"  Property="Fill"   Value="#80FF8A1F"/>
+                            <Setter TargetName="glow"  Property="Opacity" Value="1"/>
+                            <Setter Property="ToolTip">
+                                <Setter.Value>
+                                    <TextBlock>
+                                        <Run Text="MIC LIVE — click to disable" FontWeight="Bold"/>
+                                        <LineBreak/>
+                                        <Run Text="Note: Bluetooth headsets switch to HFP (telephone-quality, mono ~8 kHz) while the mic is active — this is a Bluetooth Classic limitation, not WavBall. Audio returns to normal a few seconds after disabling."/>
+                                    </TextBlock>
+                                </Setter.Value>
+                            </Setter>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ===== Volume wedge slider (recreates Corona's volume_bar_filled wedge) =====
+         The iconic WMP9 wedge: a green triangle pointing right that grows in
+         thickness from left to right. The thumb is a small green vertical wedge
+         that slides along the track. -->
+
+    <!-- Greens sampled from volume_bar_filled.bmp -->
+    <Color x:Key="WmpWedgeBrightColor">#FF82F09A</Color>  <!-- top highlight -->
+    <Color x:Key="WmpWedgeMidColor">   #FF2EA040</Color>  <!-- body -->
+    <Color x:Key="WmpWedgeDarkColor">  #FF0D4818</Color>  <!-- shadow base -->
+    <Color x:Key="WmpWedgeRimColor">   #FF051F0A</Color>  <!-- rim -->
+
+    <SolidColorBrush x:Key="WmpWedgeBrightBrush" Color="{StaticResource WmpWedgeBrightColor}"/>
+    <SolidColorBrush x:Key="WmpWedgeRimBrush"    Color="{StaticResource WmpWedgeRimColor}"/>
+
+    <LinearGradientBrush x:Key="WmpWedgeBodyBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Offset="0.00" Color="{StaticResource WmpWedgeBrightColor}"/>
+        <GradientStop Offset="0.45" Color="{StaticResource WmpWedgeMidColor}"/>
+        <GradientStop Offset="1.00" Color="{StaticResource WmpWedgeDarkColor}"/>
+    </LinearGradientBrush>
+
+    <!-- Thumb: small vertical wedge that echoes the track shape (mirrors volume_slider.bmp 10x18) -->
+    <Style x:Key="WmpWedgeThumbStyle" TargetType="Thumb">
+        <Setter Property="Width"  Value="9"/>
+        <Setter Property="Height" Value="20"/>
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <Grid>
+                        <!-- Subtle drop shadow for lift -->
+                        <Polygon Points="1,4 8,1 8,19 1,16"
+                                 Fill="#80000000"
+                                 Margin="1,1,-1,-1"/>
+                        <!-- Wedge body -->
+                        <Polygon x:Name="body"
+                                 Points="1,4 8,1 8,19 1,16"
+                                 Fill="{StaticResource WmpWedgeBodyBrush}"
+                                 Stroke="{StaticResource WmpWedgeBrightBrush}"
+                                 StrokeThickness="1"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="body" Property="Fill" Value="{StaticResource WmpWedgeBrightBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Repeat buttons in the track are invisible click targets only -->
+    <Style x:Key="WmpInvisibleRepeatButtonStyle" TargetType="RepeatButton">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="IsTabStop" Value="False"/>
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RepeatButton">
+                    <Border Background="{TemplateBinding Background}"/>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="WmpWedgeVolumeSliderStyle" TargetType="Slider">
+        <Setter Property="Minimum" Value="0"/>
+        <Setter Property="Maximum" Value="1"/>
+        <Setter Property="Height"  Value="22"/>
+        <Setter Property="IsMoveToPointEnabled" Value="True"/>
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Slider">
+                    <Grid VerticalAlignment="Center">
+                        <!-- Wedge track: triangle widening left→right.
+                             Points: pivot at left-center, expand to full height at right. -->
+                        <Polygon x:Name="WedgeTrack"
+                                 Points="0,10 120,1 120,19"
+                                 Fill="{StaticResource WmpWedgeBodyBrush}"
+                                 Stroke="{StaticResource WmpWedgeRimBrush}"
+                                 StrokeThickness="1"
+                                 Stretch="Fill"
+                                 Margin="0,1"
+                                 Opacity="0.95"/>
+                        <!-- Standard Track: thumb slides along, repeat buttons are invisible -->
+                        <Track x:Name="PART_Track">
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Style="{StaticResource WmpInvisibleRepeatButtonStyle}"
+                                              Command="Slider.DecreaseLarge"/>
+                            </Track.DecreaseRepeatButton>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Style="{StaticResource WmpInvisibleRepeatButtonStyle}"
+                                              Command="Slider.IncreaseLarge"/>
+                            </Track.IncreaseRepeatButton>
+                            <Track.Thumb>
+                                <Thumb Style="{StaticResource WmpWedgeThumbStyle}"/>
+                            </Track.Thumb>
+                        </Track>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
 </ResourceDictionary>

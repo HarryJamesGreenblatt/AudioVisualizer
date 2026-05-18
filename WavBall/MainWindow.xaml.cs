@@ -13,14 +13,35 @@ namespace WavBall;
 public partial class MainWindow : Window
 {
     private readonly AudioCaptureService _capture = new();
-    private FftProcessingService _fft = new(fftSize: 1024, bandCount: 64);
+    private readonly MicCaptureService _mic = new();
+    private FftProcessingService _fft    = new(fftSize: 1024, bandCount: 64);
+    private FftProcessingService _micFft = new(fftSize: 1024, bandCount: 64);
     private bool _running;
     private bool _stopped;   // true after Stop is pressed; bars decay to zero. false = paused (bars freeze).
+    private bool _micEnabled;
 
     // Double-buffer: audio thread writes to _backBuffer then swaps;
     // UI thread reads from the latest completed snapshot via Interlocked.Exchange.
-    private float[] _backBuffer = new float[64];
+    private float[]  _backBuffer    = new float[64];
     private float[]? _readyBuffer;
+    private float[]  _micBackBuffer  = new float[64];
+    private float[]? _micReadyBuffer;
+
+    // Persistent last-known bands per source. Updated whenever a new frame arrives;
+    // consulted every render frame. This decouples the visualizer's frame rate
+    // from the two audio callbacks' independent cadences, eliminating the
+    // "source A arrived this frame but source B didn't" magnitude cliff.
+    private readonly float[] _lastLoopBands = new float[64];
+    private readonly float[] _lastMicBands  = new float[64];
+
+    // Scratch buffer for compositing loopback + mic bands without per-frame allocation.
+    private readonly float[] _combinedBuffer = new float[64];
+
+    // Mic-to-loopback gain calibration. Consumer mics typically read several times
+    // hotter than the digital loopback level for the same perceived loudness, so
+    // we attenuate before summing to keep neither source from dominating.
+    private const float MicGain = 0.35f;
+
     // Pre-allocated zero array fed to the visualizer when capture is stopped,
     // so bars decay to the floor rather than freezing at their last values.
     private static readonly float[] _zeroBuffer = new float[64];
@@ -47,6 +68,7 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         _capture.AudioDataAvailable += OnAudioData;
+        _mic.AudioDataAvailable     += OnMicData;
 
         // Initial volume slider sync + subscribe for external changes (taskbar / hardware keys).
         VolumeSlider.Value = _volume.Volume;
@@ -64,6 +86,47 @@ public partial class MainWindow : Window
         // Start GSMTCS session tracker (fire-and-forget; hidden until data arrives).
         _ = InitNowPlayingAsync();
 
+        // Wire transport atlas hover/down states. Per WMP9 BUTTONGROUP idiom, only the
+        // hovered button lights up. We clip the hover/down overlay to each button's rect
+        // (from transports_map.bmp) so only one button highlights at a time.
+        Rect[] hitRects = [
+            new(0, 0, 31, 30),   // PLAY   (#FF0000)
+            new(34, 5, 22, 21),  // STOP   (#00FF00)
+            new(61, 5, 22, 21),  // PREV   (#FFFF00)
+            new(86, 5, 22, 21),  // NEXT   (#FA6A6A)
+            new(113, 5, 22, 21), // MIC    (#79C666)
+        ];
+        var btns = new System.Windows.Controls.Primitives.ButtonBase[]
+            { StartStopButton, StopButton, PrevTrackButton, NextTrackButton, MicToggle };
+        for (int i = 0; i < btns.Length; i++)
+        {
+            var clip = new RectangleGeometry(hitRects[i]);
+            clip.Freeze();
+            var btn = btns[i];
+            btn.MouseEnter += (_, _) =>
+            {
+                TransportsHover.Clip = clip;
+                TransportsHover.Visibility = Visibility.Visible;
+            };
+            btn.MouseLeave += (_, _) =>
+            {
+                TransportsHover.Visibility = Visibility.Collapsed;
+                TransportsDown.Visibility = Visibility.Collapsed;
+            };
+            btn.PreviewMouseDown += (_, _) =>
+            {
+                TransportsDown.Clip = clip;
+                TransportsDown.Visibility = Visibility.Visible;
+                TransportsHover.Visibility = Visibility.Collapsed;
+            };
+            btn.PreviewMouseUp += (_, _) =>
+            {
+                TransportsDown.Visibility = Visibility.Collapsed;
+                TransportsHover.Clip = clip;
+                TransportsHover.Visibility = Visibility.Visible;
+            };
+        }
+
         // Hook into the WPF compositor for smooth 60fps redraws
         CompositionTarget.Rendering += OnRendering;
     }
@@ -76,6 +139,14 @@ public partial class MainWindow : Window
         _fft.Process(samples, channels, _backBuffer);
         var old = Interlocked.Exchange(ref _readyBuffer, _backBuffer);
         _backBuffer = old ?? new float[_fft.BandCount];
+    }
+
+    private void OnMicData(float[] samples)
+    {
+        int channels = _mic.WaveFormat?.Channels ?? 1;
+        _micFft.Process(samples, channels, _micBackBuffer);
+        var old = Interlocked.Exchange(ref _micReadyBuffer, _micBackBuffer);
+        _micBackBuffer = old ?? new float[_micFft.BandCount];
     }
 
     private void OnRendering(object? sender, EventArgs e)
@@ -105,13 +176,40 @@ public partial class MainWindow : Window
             return;
         }
 
-        // Atomically grab the latest complete frame (if one is available)
-        var frame = Interlocked.Exchange(ref _readyBuffer, null);
+        // Atomically grab the latest complete frame from each pipeline (if any),
+        // and *copy into persistent state*. The visualizer then always reads
+        // from persistent state — it doesn't matter which callback fired this frame.
+        var loopFrame = Interlocked.Exchange(ref _readyBuffer,    null);
+        var micFrame  = Interlocked.Exchange(ref _micReadyBuffer, null);
 
-        // Pass actual data as a span, or Empty when no new audio arrived.
-        // Empty span causes AudioReactive to skip (bars retain last values),
-        // while physics still ticks — fixing both strobe and frozen-peaks bugs.
-        Visualizer.Tick(frame != null ? frame.AsSpan() : ReadOnlySpan<float>.Empty);
+        if (loopFrame != null)
+        {
+            int n = Math.Min(_lastLoopBands.Length, loopFrame.Length);
+            Buffer.BlockCopy(loopFrame, 0, _lastLoopBands, 0, n * sizeof(float));
+        }
+        if (micFrame != null && _micEnabled)
+        {
+            int n = Math.Min(_lastMicBands.Length, micFrame.Length);
+            Buffer.BlockCopy(micFrame, 0, _lastMicBands, 0, n * sizeof(float));
+        }
+
+        // Additive composition with calibrated mic gain.
+        // Both inputs are non-negative band magnitudes, so a plain sum is safe
+        // and reads as "the bar shows whichever source has activity in this band,
+        // and both together when both are active" — exactly the user's mental model.
+        // The downstream AudioReactive component already normalises/smooths,
+        // so we don't need to soft-clip here.
+        if (_micEnabled)
+        {
+            int n = _combinedBuffer.Length;
+            for (int i = 0; i < n; i++)
+                _combinedBuffer[i] = _lastLoopBands[i] + MicGain * _lastMicBands[i];
+            Visualizer.Tick(_combinedBuffer.AsSpan());
+        }
+        else
+        {
+            Visualizer.Tick(_lastLoopBands.AsSpan());
+        }
     }
 
     private void StartStopButton_Click(object sender, RoutedEventArgs e)
@@ -122,8 +220,7 @@ public partial class MainWindow : Window
             _running = false;
             _stopped = false;   // Pause — bars freeze, not zeroed
             Visualizer.PauseRoundTimer();
-            PlayGlyph.Visibility = Visibility.Visible;
-            PauseGlyph.Visibility = Visibility.Collapsed;
+            PauseOverlay.Visibility = Visibility.Collapsed;
             StartStopButton.ToolTip = "Play";
         }
         else
@@ -136,8 +233,7 @@ public partial class MainWindow : Window
                 _running = true;
                 _stopped = false;   // resuming from either Pause or Stop
                 Visualizer.ResumeRoundTimer();
-                PlayGlyph.Visibility = Visibility.Collapsed;
-                PauseGlyph.Visibility = Visibility.Visible;
+                PauseOverlay.Visibility = Visibility.Visible;
                 StartStopButton.ToolTip = "Pause";
             }
             catch (Exception ex)
@@ -155,8 +251,40 @@ public partial class MainWindow : Window
     {
         CompositionTarget.Rendering -= OnRendering;
         _capture.Dispose();
+        _mic.Dispose();
         _volume.Dispose();
         _nowPlaying?.Dispose();
+    }
+
+    private void MicToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        _micEnabled = MicToggle.IsChecked == true;
+        MicLiveCaption.Visibility = _micEnabled ? Visibility.Visible : Visibility.Collapsed;
+        if (_micEnabled)
+        {
+            try
+            {
+                _mic.Start();
+                int sr = _mic.WaveFormat?.SampleRate ?? 44100;
+                _micFft = new FftProcessingService(fftSize: 1024, bandCount: 64, sampleRate: sr);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Failed to start microphone capture:\n\n{ex.Message}\n\nCheck that a default input device is set in Windows Sound settings and that microphone access is allowed in Windows privacy settings.",
+                    "Microphone Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                MicToggle.IsChecked = false;
+                _micEnabled = false;
+            }
+        }
+        else
+        {
+            _mic.Stop();
+            _micReadyBuffer = null;
+            Array.Clear(_lastMicBands);  // forget mic contribution immediately on disable
+        }
     }
 
     private void PrevTrackButton_Click(object sender, RoutedEventArgs e) => MediaKeyService.PrevTrack();
@@ -170,9 +298,10 @@ public partial class MainWindow : Window
         _running = false;
         _stopped = true;   // Stop — bars will decay to zero
         _readyBuffer = null;
+        Array.Clear(_lastLoopBands);
+        Array.Clear(_lastMicBands);
         Visualizer.PauseRoundTimer();
-        PlayGlyph.Visibility = Visibility.Visible;
-        PauseGlyph.Visibility = Visibility.Collapsed;
+        PauseOverlay.Visibility = Visibility.Collapsed;
         StartStopButton.ToolTip = "Play";
     }
 
@@ -210,6 +339,7 @@ public partial class MainWindow : Window
         {
             NowPlayingHeader.Visibility  = Visibility.Collapsed;
             NowPlayingContent.Visibility = Visibility.Collapsed;
+            MetadataText.Text = "";
             return;
         }
 
@@ -218,6 +348,11 @@ public partial class MainWindow : Window
         NowPlayingApp.Text    = NowPlayingService.FormatAppName(_nowPlaying.SourceAppUserModelId);
         NowPlayingTitle.Text  = _nowPlaying.Title;
         NowPlayingArtist.Text = _nowPlaying.Artist;
+
+        // Green metadata strip (Corona.wms-style green LED text)
+        MetadataText.Text = string.IsNullOrEmpty(_nowPlaying.Artist)
+            ? _nowPlaying.Title
+            : $"{_nowPlaying.Artist} - {_nowPlaying.Title}";
 
         // App icon (synchronous — fast P/Invoke for unpackaged apps like Spotify.exe)
         NowPlayingAppIcon.Source = ExtractProcessIcon(_nowPlaying.SourceAppUserModelId);

@@ -35,7 +35,8 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="36" />   <!-- svTop: LED display panel embedded in chrome -->
             <RowDefinition Height="*"  />   <!-- svMiddle: visualizer in inset bezel -->
-            <RowDefinition Height="38" />   <!-- svBottom: transport bar with embossed lift -->
+            <RowDefinition Height="23" />   <!-- svBottom: metadata strip (player_bottom_*) -->
+            <RowDefinition Height="60" />   <!-- transport chrome panel (equalizer_*) -->
         </Grid.RowDefinitions>
 
         <!-- ===== svTop: title bar + LED display + window controls (we OWN the chrome now) =====
@@ -106,19 +107,37 @@
         <!-- ===== svMiddle: visualizer (left) + ball-data side panel (right, WMP9-style) ===== -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>    <!-- Visualizer -->
+                <ColumnDefinition Width="*"/>    <!-- Visualizer with inner chrome frame -->
                 <ColumnDefinition Width="220"/>  <!-- Side panel -->
             </Grid.ColumnDefinitions>
 
-            <!-- Visualizer in dark recessed bezel -->
-            <Border Grid.Column="0"
-                    Background="Black"
-                    BorderBrush="{StaticResource WmpChromeShadowBrush}"
-                    BorderThickness="1,0,0,0">
-                <Border BorderBrush="#33000000" BorderThickness="1,1,1,1">
+            <!-- Visualizer wrapped in WMP9 inner chrome frame (player_left/right rails) -->
+            <Grid Grid.Column="0">
+                <!-- Left rail: player_left.png (19×1), tiled vertically — thick highlight edge -->
+                <Rectangle Width="19" HorizontalAlignment="Left" Panel.ZIndex="1"
+                           RenderOptions.BitmapScalingMode="NearestNeighbor">
+                    <Rectangle.Fill>
+                        <ImageBrush ImageSource="pack://application:,,,/Assets/Sprites/player_left.png"
+                                    TileMode="Tile" ViewportUnits="Absolute"
+                                    Viewport="0,0,19,1" Stretch="Fill"/>
+                    </Rectangle.Fill>
+                </Rectangle>
+
+                <!-- Right rail: player_right.png (7×1), tiled vertically — thin shadow edge -->
+                <Rectangle Width="7" HorizontalAlignment="Right" Panel.ZIndex="1"
+                           RenderOptions.BitmapScalingMode="NearestNeighbor">
+                    <Rectangle.Fill>
+                        <ImageBrush ImageSource="pack://application:,,,/Assets/Sprites/player_right.png"
+                                    TileMode="Tile" ViewportUnits="Absolute"
+                                    Viewport="0,0,7,1" Stretch="Fill"/>
+                    </Rectangle.Fill>
+                </Rectangle>
+
+                <!-- Black visualizer area, inset by rail widths -->
+                <Border Background="Black" Margin="19,0,7,0">
                     <local:VisualizerElement x:Name="Visualizer" />
                 </Border>
-            </Border>
+            </Grid>
 
             <!-- Side panel: ball stats, timer, round history -->
             <Border Grid.Column="1"
@@ -357,96 +376,151 @@
             </Border>
         </Grid>
 
-        <!-- ===== svBottom: transport bar with embossed top edge =====
-             1px highlight above 1px shadow = "lifted brushed-metal" feel. -->
-        <Border Grid.Row="2"
-                Background="{StaticResource WmpChromeVerticalInverseBrush}"
-                BorderBrush="{StaticResource WmpChromeHighlightBrush}"
-                BorderThickness="0,1,0,0">
-            <Border BorderBrush="{StaticResource WmpChromeShadowBrush}"
-                    BorderThickness="0,1,0,0">
-                <Grid Margin="8,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />  <!-- Transports -->
-                        <ColumnDefinition Width="Auto" />  <!-- Rain toggle -->
-                        <ColumnDefinition Width="*"    />  <!-- spacer -->
-                        <ColumnDefinition Width="Auto" />  <!-- Volume -->
-                    </Grid.ColumnDefinitions>
+        <!-- ===== svBottom: WMP9 metadata strip (player_bottom_left/middle/right) =====
+             Per Corona.wms this is the video-frame bottom edge: curved chrome corners with
+             green LED-style metadata text. Sits between the visualizer and the transport panel. -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Image Grid.Column="0"
+                   Source="pack://application:,,,/Assets/Sprites/bottom_left.png"
+                   Width="286" Height="23" Stretch="None" HorizontalAlignment="Left"
+                   RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+            <Rectangle Grid.Column="1" Height="23">
+                <Rectangle.Fill>
+                    <ImageBrush ImageSource="pack://application:,,,/Assets/Sprites/bottom_middle.png"
+                                TileMode="Tile" ViewportUnits="Absolute"
+                                Viewport="0,0,1,23" Stretch="Fill"/>
+                </Rectangle.Fill>
+            </Rectangle>
+            <Image Grid.Column="2"
+                   Source="pack://application:,,,/Assets/Sprites/bottom_right.png"
+                   Width="59" Height="23" Stretch="None" HorizontalAlignment="Right"
+                   RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+            <!-- Green metadata text (Now Playing) at original Corona position -->
+            <TextBlock x:Name="MetadataText"
+                       Grid.Column="0" Margin="63,3,0,0"
+                       Foreground="#FF00FF00" FontFamily="Arial" FontSize="9" FontWeight="Bold"
+                       VerticalAlignment="Top" TextTrimming="CharacterEllipsis"
+                       IsHitTestVisible="False"/>
+        </Grid>
 
-                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Button x:Name="PrevTrackButton"
-                                Style="{StaticResource WmpTransportButtonStyle}"
-                                ToolTip="Previous track"
-                                Margin="0,0,4,0"
-                                Click="PrevTrackButton_Click">
-                            <Path Data="{StaticResource WmpPrevTrackGeometry}"
-                                  Fill="{StaticResource WmpStopGlyphBrush}"
-                                  Stretch="Uniform"
-                                  Width="12" Height="12"/>
-                        </Button>
-                        <Button x:Name="StartStopButton"
-                                Style="{StaticResource WmpTransportButtonStyle}"
-                                ToolTip="Play"
-                                Margin="0,0,4,0"
-                                Click="StartStopButton_Click">
-                            <Grid Width="12" Height="12">
-                                <Path x:Name="PlayGlyph"
-                                      Data="{StaticResource WmpPlayGeometry}"
-                                      Fill="{StaticResource WmpPlayGlyphBrush}"
-                                      Stretch="Uniform"
-                                      Visibility="Visible"/>
-                                <Path x:Name="PauseGlyph"
-                                      Data="{StaticResource WmpPauseGeometry}"
-                                      Fill="{StaticResource WmpStopGlyphBrush}"
-                                      Stretch="Uniform"
-                                      Visibility="Collapsed"/>
-                            </Grid>
-                        </Button>
-                        <Button x:Name="StopButton"
-                                Style="{StaticResource WmpTransportButtonStyle}"
-                                ToolTip="Stop"
-                                Margin="0,0,4,0"
-                                Click="StopButton_Click">
-                            <Path Data="{StaticResource WmpStopGeometry}"
-                                  Fill="{StaticResource WmpStopGlyphBrush}"
-                                  Stretch="Uniform"
-                                  Width="12" Height="12"/>
-                        </Button>
-                        <Button x:Name="NextTrackButton"
-                                Style="{StaticResource WmpTransportButtonStyle}"
-                                ToolTip="Next track"
-                                Margin="0,0,12,0"
-                                Click="NextTrackButton_Click">
-                            <Path Data="{StaticResource WmpNextTrackGeometry}"
-                                  Fill="{StaticResource WmpStopGlyphBrush}"
-                                  Stretch="Uniform"
-                                  Width="12" Height="12"/>
-                        </Button>
-                    </StackPanel>
+        <!-- ===== Transport chrome panel (equalizer_left/middle/right from Corona.wms) =====
+             Per Corona.wms svEqualizerBottom: the chrome panel background hosts transports
+             as a single 136×30 atlas (BUTTONGROUP idiom), not individual sliced buttons.
+             Hit-testing is layered via invisible buttons at mapping-color positions.
+             Pause is a 30×30 overlay at the play position, not a button swap. -->
+        <Grid Grid.Row="3" ClipToBounds="True">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="274"/>  <!-- equalizer_left: transports + volume -->
+                <ColumnDefinition Width="*"/>    <!-- equalizer_middle: tiled chrome + custom controls -->
+                <ColumnDefinition Width="59"/>   <!-- equalizer_right -->
+            </Grid.ColumnDefinitions>
 
-                    <!-- System master volume (NAudio AudioEndpointVolume) -->
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
-                        <TextBlock Text="🔊" FontSize="14" VerticalAlignment="Center"
-                                   Margin="0,0,6,0"
-                                   Foreground="{StaticResource WmpBodyTextBrush}"/>
-                        <Slider x:Name="VolumeSlider"
-                                Width="120"
-                                Minimum="0" Maximum="1"
-                                SmallChange="0.02" LargeChange="0.1"
-                                TickFrequency="0.1"
-                                IsMoveToPointEnabled="True"
-                                VerticalAlignment="Center"
-                                ValueChanged="VolumeSlider_ValueChanged"
-                                ToolTip="System volume"/>
-                    </StackPanel>
+            <!-- ===== Left chrome panel: pixel-positioned per Corona.wms ===== -->
+            <Canvas Grid.Column="0" Width="274" Height="60" ClipToBounds="True">
+                <!-- Chrome background -->
+                <Image Source="pack://application:,,,/Assets/Sprites/equalizer_left.png"
+                       Canvas.Left="0" Canvas.Top="0" Width="274" Height="60"
+                       Stretch="Fill" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
 
-                    <ui:ToggleSwitch Grid.Column="3" x:Name="RainToggle" Content="Rain"
+                <!-- Full transport atlas at (8, 20) per Corona.wms bgTransports -->
+                <Image x:Name="TransportsAtlas"
+                       Source="pack://application:,,,/Assets/Sprites/transports.png"
+                       Canvas.Left="8" Canvas.Top="20" Width="136" Height="30"
+                       Stretch="Fill" RenderOptions.BitmapScalingMode="HighQuality"/>
+
+                <!-- Per-button hover/down overlays — clipped to individual button rects -->
+                <Image x:Name="TransportsHover"
+                       Source="pack://application:,,,/Assets/Sprites/transports_hover.png"
+                       Canvas.Left="8" Canvas.Top="20" Width="136" Height="30"
+                       Stretch="Fill" RenderOptions.BitmapScalingMode="HighQuality"
+                       Visibility="Collapsed" IsHitTestVisible="False"/>
+                <Image x:Name="TransportsDown"
+                       Source="pack://application:,,,/Assets/Sprites/transports_down.png"
+                       Canvas.Left="8" Canvas.Top="20" Width="136" Height="30"
+                       Stretch="Fill" RenderOptions.BitmapScalingMode="HighQuality"
+                       Visibility="Collapsed" IsHitTestVisible="False"/>
+
+                <!-- Pause overlay — covers play position only, shown when playing -->
+                <Image x:Name="PauseOverlay"
+                       Source="pack://application:,,,/Assets/Sprites/transports_pause.png"
+                       Canvas.Left="8" Canvas.Top="20" Width="30" Height="30"
+                       Stretch="Fill" RenderOptions.BitmapScalingMode="HighQuality"
+                       Visibility="Collapsed" IsHitTestVisible="False"/>
+
+                <!-- Invisible hit buttons at transports_map.bmp positions (relative to atlas at 8,20) -->
+                <Button x:Name="StartStopButton" Canvas.Left="8" Canvas.Top="20"
+                        Width="31" Height="30" Opacity="0" Cursor="Hand"
+                        ToolTip="Play" Click="StartStopButton_Click"/>
+                <Button x:Name="StopButton" Canvas.Left="42" Canvas.Top="25"
+                        Width="22" Height="21" Opacity="0" Cursor="Hand"
+                        ToolTip="Stop" Click="StopButton_Click"/>
+                <Button x:Name="PrevTrackButton" Canvas.Left="69" Canvas.Top="25"
+                        Width="22" Height="21" Opacity="0" Cursor="Hand"
+                        ToolTip="Previous track" Click="PrevTrackButton_Click"/>
+                <Button x:Name="NextTrackButton" Canvas.Left="94" Canvas.Top="25"
+                        Width="22" Height="21" Opacity="0" Cursor="Hand"
+                        ToolTip="Next track" Click="NextTrackButton_Click"/>
+
+                <!-- MIC toggle at mute position per transports_map.bmp -->
+                <ToggleButton x:Name="MicToggle" Canvas.Left="121" Canvas.Top="25"
+                              Width="22" Height="21" Opacity="0" Cursor="Hand"
+                              ToolTip="Toggle microphone"
+                              Checked="MicToggle_Changed" Unchecked="MicToggle_Changed"/>
+
+                <!-- Volume slider at Corona.wms position (150, 25), 68×18 -->
+                <Slider x:Name="VolumeSlider" Canvas.Left="150" Canvas.Top="31"
+                        Width="68" Height="18" Minimum="0" Maximum="1"
+                        SmallChange="0.02" LargeChange="0.1"
+                        Style="{StaticResource WmpWedgeVolumeSliderStyle}"
+                        ValueChanged="VolumeSlider_ValueChanged"
+                        ToolTip="System volume"/>
+            </Canvas>
+
+            <!-- ===== Tiled middle chrome + custom controls ===== -->
+            <Grid Grid.Column="1">
+                <Rectangle RenderOptions.BitmapScalingMode="NearestNeighbor">
+                    <Rectangle.Fill>
+                        <ImageBrush ImageSource="pack://application:,,,/Assets/Sprites/equalizer_middle.png"
+                                    TileMode="Tile" ViewportUnits="Absolute"
+                                    Viewport="0,0,1,60" Stretch="Fill"/>
+                    </Rectangle.Fill>
+                </Rectangle>
+
+                <!-- LIVE indicator + Rain toggle in the chrome mid-section -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                            HorizontalAlignment="Left" Margin="12,0,0,0">
+                    <TextBlock x:Name="MicLiveCaption"
+                               Text="LIVE"
+                               FontFamily="{StaticResource WmpChromeFontFamily}"
+                               FontSize="9" FontWeight="Bold"
+                               Foreground="{StaticResource WmpPlayGlyphBrush}"
+                               VerticalAlignment="Center"
+                               Visibility="Collapsed">
+                        <TextBlock.Effect>
+                            <DropShadowEffect Color="{StaticResource WmpPlayAmberColor}"
+                                              BlurRadius="6" ShadowDepth="0"/>
+                        </TextBlock.Effect>
+                    </TextBlock>
+
+                    <ui:ToggleSwitch x:Name="RainToggle" Content="Rain"
                                      VerticalAlignment="Center"
-                                     IsChecked="False"
-                                     Checked="RainToggle_Changed" Unchecked="RainToggle_Changed" />
-                </Grid>
-            </Border>
-        </Border>
+                                     IsChecked="False" Margin="16,0,0,0"
+                                     Checked="RainToggle_Changed" Unchecked="RainToggle_Changed"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- ===== Right chrome panel ===== -->
+            <Image Grid.Column="2"
+                   Source="pack://application:,,,/Assets/Sprites/equalizer_right.png"
+                   Width="59" Height="60" Stretch="None"
+                   HorizontalAlignment="Right" VerticalAlignment="Top"
+                   RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+        </Grid>
     </Grid>
     </Border>
 </Window>
