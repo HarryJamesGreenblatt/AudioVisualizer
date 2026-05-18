@@ -34,8 +34,7 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="36" />   <!-- svTop: LED display panel embedded in chrome -->
-            <RowDefinition Height="*"  />   <!-- svMiddle: visualizer in inset bezel -->
-            <RowDefinition Height="23" />   <!-- svBottom: metadata strip (player_bottom_*) -->
+            <RowDefinition Height="*"  />   <!-- svMiddle: visualizer in inset bezel + metadata strip -->
             <RowDefinition Height="60" />   <!-- transport chrome panel (equalizer_*) -->
         </Grid.RowDefinitions>
 
@@ -43,10 +42,22 @@
              Whole strip is draggable by WindowChrome (CaptionHeight=36). Interactive children
              opt out via WindowChrome.IsHitTestVisibleInChrome="True". -->
         <Border Grid.Row="0"
-                Background="{StaticResource WmpChromeVerticalBrush}"
                 BorderBrush="{StaticResource WmpChromeShadowBrush}"
                 BorderThickness="0,0,0,1"
                 Padding="6,3,0,3">
+            <!-- Grey metallic chrome matching the transport panel's button surround
+                 (equalizer_left.png y=0-2 + y=16-21: glassy highlight → grey-blue → light transition). -->
+            <Border.Background>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                    <GradientStop Color="#FFEBF7FB" Offset="0.0"/>
+                    <GradientStop Color="#FF8C97B9" Offset="0.15"/>
+                    <GradientStop Color="#FF909CBC" Offset="0.35"/>
+                    <GradientStop Color="#FFA0AACB" Offset="0.55"/>
+                    <GradientStop Color="#FFDDE6F5" Offset="0.80"/>
+                    <GradientStop Color="#FFC3DBF0" Offset="0.92"/>
+                    <GradientStop Color="#FF9CB0D7" Offset="1.0"/>
+                </LinearGradientBrush>
+            </Border.Background>
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />  <!-- App icon + title -->
@@ -111,39 +122,87 @@
                 <ColumnDefinition Width="220"/>  <!-- Side panel -->
             </Grid.ColumnDefinitions>
 
-            <!-- Visualizer wrapped in WMP9 inner chrome frame (player_left/right rails) -->
+            <!-- Visualizer wrapped in WMP9 inner chrome frame -->
             <Grid Grid.Column="0">
-                <!-- Left rail: player_left.png (19×1), tiled vertically — thick highlight edge -->
-                <Rectangle Width="19" HorizontalAlignment="Left" Panel.ZIndex="1"
-                           RenderOptions.BitmapScalingMode="NearestNeighbor">
-                    <Rectangle.Fill>
-                        <ImageBrush ImageSource="pack://application:,,,/Assets/Sprites/player_left.png"
-                                    TileMode="Tile" ViewportUnits="Absolute"
-                                    Viewport="0,0,19,1" Stretch="Fill"/>
-                    </Rectangle.Fill>
-                </Rectangle>
+                <!-- Left chrome edge: blue metallic gradient matching the transport panel
+                     chrome (equalizer_middle.png), rotated 90° for vertical use.
+                     Gradient: light glassy highlight on outer edge → deep WMP9 blue → dark inner edge. -->
+                <Border Width="19" HorizontalAlignment="Left" Panel.ZIndex="1">
+                    <Border.Background>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                            <GradientStop Color="#FFE9EDF6" Offset="0.0"/>
+                            <GradientStop Color="#FFCFDCF1" Offset="0.05"/>
+                            <GradientStop Color="#FF5160A6" Offset="0.15"/>
+                            <GradientStop Color="#FF6C7DBE" Offset="0.4"/>
+                            <GradientStop Color="#FF8BA0D3" Offset="0.6"/>
+                            <GradientStop Color="#FF9EB6E0" Offset="0.8"/>
+                            <GradientStop Color="#FF8396BB" Offset="0.92"/>
+                            <GradientStop Color="#FF646871" Offset="1.0"/>
+                        </LinearGradientBrush>
+                    </Border.Background>
+                </Border>
 
-                <!-- Right rail: player_right.png (7×1), tiled vertically — thin shadow edge -->
-                <Rectangle Width="7" HorizontalAlignment="Right" Panel.ZIndex="1"
-                           RenderOptions.BitmapScalingMode="NearestNeighbor">
-                    <Rectangle.Fill>
-                        <ImageBrush ImageSource="pack://application:,,,/Assets/Sprites/player_right.png"
-                                    TileMode="Tile" ViewportUnits="Absolute"
-                                    Viewport="0,0,7,1" Stretch="Fill"/>
-                    </Rectangle.Fill>
-                </Rectangle>
+                <!-- Right bevel: metallic separator between viz and side panel -->
+                <Border Width="7" HorizontalAlignment="Right" Panel.ZIndex="1">
+                    <Border.Background>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                            <GradientStop Color="#FF606381" Offset="0.0"/>
+                            <GradientStop Color="#FFA0B5D4" Offset="0.5"/>
+                            <GradientStop Color="#FFC0D0E8" Offset="1.0"/>
+                        </LinearGradientBrush>
+                    </Border.Background>
+                </Border>
 
-                <!-- Black visualizer area, inset by rail widths -->
-                <Border Background="Black" Margin="19,0,7,0">
+                <!-- Black visualizer area, inset by rail widths + metadata strip height -->
+                <Border Background="Black" Margin="19,0,7,23">
                     <local:VisualizerElement x:Name="Visualizer" />
                 </Border>
+
+                <!-- Metadata strip at bottom of inner frame (player_bottom_left/middle/right) -->
+                <Grid Height="23" VerticalAlignment="Bottom" Panel.ZIndex="1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Image Grid.Column="0"
+                           Source="pack://application:,,,/Assets/Sprites/bottom_left.png"
+                           Width="286" Height="23" Stretch="None" HorizontalAlignment="Left"
+                           RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                    <Rectangle Grid.Column="1" Height="23">
+                        <Rectangle.Fill>
+                            <ImageBrush ImageSource="pack://application:,,,/Assets/Sprites/bottom_middle.png"
+                                        TileMode="Tile" ViewportUnits="Absolute"
+                                        Viewport="0,0,1,23" Stretch="Fill"/>
+                        </Rectangle.Fill>
+                    </Rectangle>
+                    <Image Grid.Column="2"
+                           Source="pack://application:,,,/Assets/Sprites/bottom_right.png"
+                           Width="59" Height="23" Stretch="None" HorizontalAlignment="Right"
+                           RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                    <TextBlock x:Name="MetadataText"
+                               Grid.Column="0" Margin="63,3,0,0"
+                               Foreground="#FF00FF00" FontFamily="Arial" FontSize="9" FontWeight="Bold"
+                               VerticalAlignment="Top" TextTrimming="CharacterEllipsis"
+                               IsHitTestVisible="False"/>
+                </Grid>
             </Grid>
 
             <!-- Side panel: ball stats, timer, round history -->
-            <Border Grid.Column="1"
-                    Background="#FF0D1828"
+            <Grid Grid.Column="1">
+                <!-- Right bevel: metallic edge on outer side of panel (mirrors viz/panel separator) -->
+                <Border Width="7" HorizontalAlignment="Right" Panel.ZIndex="1">
+                    <Border.Background>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                            <GradientStop Color="#FFC0D0E8" Offset="0.0"/>
+                            <GradientStop Color="#FFA0B5D4" Offset="0.5"/>
+                            <GradientStop Color="#FF606381" Offset="1.0"/>
+                        </LinearGradientBrush>
+                    </Border.Background>
+                </Border>
+            <Border Background="#FF0D1828"
                     BorderBrush="{StaticResource WmpChromeShadowBrush}"
-                    BorderThickness="1,0,0,0"
+                    BorderThickness="1,0,7,0"
                     ClipToBounds="True">
                 <DockPanel>
 
@@ -374,38 +433,7 @@
 
                 </DockPanel>
             </Border>
-        </Grid>
-
-        <!-- ===== svBottom: WMP9 metadata strip (player_bottom_left/middle/right) =====
-             Per Corona.wms this is the video-frame bottom edge: curved chrome corners with
-             green LED-style metadata text. Sits between the visualizer and the transport panel. -->
-        <Grid Grid.Row="2">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-            <Image Grid.Column="0"
-                   Source="pack://application:,,,/Assets/Sprites/bottom_left.png"
-                   Width="286" Height="23" Stretch="None" HorizontalAlignment="Left"
-                   RenderOptions.BitmapScalingMode="NearestNeighbor"/>
-            <Rectangle Grid.Column="1" Height="23">
-                <Rectangle.Fill>
-                    <ImageBrush ImageSource="pack://application:,,,/Assets/Sprites/bottom_middle.png"
-                                TileMode="Tile" ViewportUnits="Absolute"
-                                Viewport="0,0,1,23" Stretch="Fill"/>
-                </Rectangle.Fill>
-            </Rectangle>
-            <Image Grid.Column="2"
-                   Source="pack://application:,,,/Assets/Sprites/bottom_right.png"
-                   Width="59" Height="23" Stretch="None" HorizontalAlignment="Right"
-                   RenderOptions.BitmapScalingMode="NearestNeighbor"/>
-            <!-- Green metadata text (Now Playing) at original Corona position -->
-            <TextBlock x:Name="MetadataText"
-                       Grid.Column="0" Margin="63,3,0,0"
-                       Foreground="#FF00FF00" FontFamily="Arial" FontSize="9" FontWeight="Bold"
-                       VerticalAlignment="Top" TextTrimming="CharacterEllipsis"
-                       IsHitTestVisible="False"/>
+            </Grid> <!-- end side panel wrapper -->
         </Grid>
 
         <!-- ===== Transport chrome panel (equalizer_left/middle/right from Corona.wms) =====
@@ -413,7 +441,7 @@
              as a single 136×30 atlas (BUTTONGROUP idiom), not individual sliced buttons.
              Hit-testing is layered via invisible buttons at mapping-color positions.
              Pause is a 30×30 overlay at the play position, not a button swap. -->
-        <Grid Grid.Row="3" ClipToBounds="True">
+        <Grid Grid.Row="2" ClipToBounds="True">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="274"/>  <!-- equalizer_left: transports + volume -->
                 <ColumnDefinition Width="*"/>    <!-- equalizer_middle: tiled chrome + custom controls -->

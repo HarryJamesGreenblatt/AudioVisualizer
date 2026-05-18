@@ -20,8 +20,8 @@ A real-time audio spectrum visualizer and physics game for Windows built with WP
 - **Autonomous Goal Agent** — the goal is a "mosquito" that hunts for musical energy: a two-dimensional appetite machine (Charge sensor + Satiety integrator) cycles between Feeding (proximity-weighted loudest band) and Sated (retreats to a randomized altitude above the action via anti-centroid X), so it migrates across the playing field on a polyrhythmic schedule rather than locking to one peak
 - **Dual-Layer Goal Visual** — a cool cyan halo that grows with appetite-cycle state and pulses with bass kicks, around a warm gold ring that deforms into an oscilloscope-style squiggle on snare hits (high-frequency sinusoidal radial perturbation with exponential ring-out) — geometric shape encodes transient energy while brightness encodes collidability
 - **Per-Band Thermal Luminosity** — bars glow brighter with sustained activity; treble bands charge faster
-- **WMP9-Inspired Shell** — three-row Windows Media Player 9 ("Corona") chrome: top title bar with custom icon + drag region + min/max/close, visualizer + 220px side panel in the middle, bottom transport strip. Glass-bead media buttons (◀▏▶/⏸▏⏹▏▶) and a system volume slider. Palette and glyph colors sampled from the original 2002 Microsoft `transports.bmp` sprite atlas; everything ships as WPF vector recreations (no Microsoft artwork embedded).
-- **Side Panel** — WMP9-style info panel: ball sprite icon (from game assets), physics stats (mass, restitution, radius in real-world units), LED round timer, and a round history list (one entry per ball type, clobbered on update, amber personal-best highlights, fade-in animation on new entries).
+- **WMP9-Inspired Shell** — four-row Windows Media Player 9 ("Corona") chrome, with layout and sprite positions derived from the original `Corona.wms` skin layout spec. Inner chrome frame around the visualizer uses tiled `player_left.png` (19px) and `player_right.png` (7px) rails for the signature asymmetric 3D bevel. Metadata strip with green LED text shows the current track. Transport chrome panel uses the original `equalizer_left/middle/right` bitmaps as background, with the full `transports.png` atlas (136×30) rendered as a single image — per-button hover/down via clipped overlays from `transports_hover.png` / `transports_down.png`. Pause is a 30×30 overlay at the play position (per the Corona `PAUSEBUTTON` pattern). Palette sampled from the 2002 Microsoft `transports.bmp` sprite atlas.
+- **Side Panel** — WMP9-style info panel: ball sprite icon (from game assets), physics stats (mass, restitution, radius in real-world units), LED round timer, and a round history list (one entry per ball type, clobbered on update, amber personal-best highlights, fade-in animation on new entries). Now Playing section shows album art + track metadata from the active media session.
 - **System Volume Control** — master volume slider wired to the default audio endpoint via NAudio `MMDeviceEnumerator`; syncs bidirectionally with external changes (taskbar, hardware keys).
 - **System Media-Key Integration** — the ◀ / ▶ buttons send `VK_MEDIA_PREV_TRACK` / `VK_MEDIA_NEXT_TRACK` globally, so they skip tracks in whatever app is currently playing (Spotify, browsers, Groove, foobar, etc.) without requiring focus or per-app integration.
 
@@ -61,10 +61,19 @@ WavBall/
 │   ├── RoundTimerService.cs      # 4-state stopwatch (Idle/Running/Paused/Stopped)
 │   └── SystemVolumeService.cs    # NAudio MMDevice master volume read/write + external change events
 ├── Themes/
-│   └── Wmp9.xaml                 # WMP9 "Corona" palette + glass-bead transport button style
+│   └── Wmp9.xaml                 # WMP9 "Corona" palette + button styles + wedge volume slider
+├── Assets/
+│   └── Sprites/                  # Alpha-keyed PNGs from Corona skin BMPs (17 files)
+│       ├── transports*.png       # Full 136×30 atlas + hover/down/pause overlays
+│       ├── equalizer_*.png       # Transport chrome panel (left/middle/right)
+│       ├── bottom_*.png          # Metadata strip with curved corners
+│       ├── player_left/right.png # Inner frame rails (tiled vertically)
+│       └── volume_*.png          # Volume slider sprites
+├── Scripts/
+│   └── Slice-WmpSprites.ps1     # BMP → magenta-to-alpha PNG converter
 ├── Scene.cs                  # Game loop: fixed-timestep physics + render
 ├── VisualizerElement.cs      # WPF host: entity management, layer toggles
-├── MainWindow.xaml/.cs       # WMP9 shell (3-row Grid: chrome / visualizer+panel / transport)
+├── MainWindow.xaml/.cs       # WMP9 shell (4-row Grid: chrome / visualizer+panel / metadata / transport)
 └── App.xaml/.cs              # Application entry point (merges Wmp9.xaml resources)
 ```
 
@@ -110,7 +119,7 @@ dotnet build
 dotnet run --project WavBall
 ```
 
-Play audio through your default output device, then click **▶** (the amber play bead in the bottom strip).
+Play audio through your default output device, then click the play button (the glossy blue bead with the amber triangle in the transport panel).
 
 ## License
 
