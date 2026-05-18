@@ -78,6 +78,12 @@ public sealed class VisualizerElement : FrameworkElement
     /// <summary>Pre-formatted LED-style readout for the round timer (e.g. "▶ 00:14.27").</summary>
     public string LedText => _timer.GetReadout();
 
+    /// <summary>Whether the goal is currently collidable.</summary>
+    public bool IsGoalCollidable => _goal?.IsCollidable ?? false;
+
+    /// <summary>Current goal mood ("Feeding" or "Sated"), or empty if no goal.</summary>
+    public string GoalMood => _goal?.CurrentMood ?? "";
+
     /// <summary>Suspend timing when audio capture stops or pauses.</summary>
     public void PauseRoundTimer()
     {

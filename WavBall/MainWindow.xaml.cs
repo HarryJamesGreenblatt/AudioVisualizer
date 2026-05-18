@@ -154,11 +154,45 @@ public partial class MainWindow : Window
         // Refresh timer in the side panel (ticks even when audio is off).
         TimerDisplay.Text = Visualizer.LedText;
 
+        // Goal status HUD in the green metadata strip (only when audio is running)
+        if (_running)
+        {
+            // Left: collidability — red ◎ DISCHARGED → blinking gold ◎ ARMED
+            bool collidable = Visualizer.IsGoalCollidable;
+            GoalStatusText.Text = collidable ? "◎ ARMED" : "◎ DISCHARGED";
+            GoalStatusText.Foreground = collidable
+                ? System.Windows.Media.Brushes.Gold
+                : System.Windows.Media.Brushes.Red;
+            GoalStatusText.Opacity = (collidable && DateTime.Now.Millisecond % 800 < 400) ? 0.4 : 1.0;
+
+            // Right: mood — blinking-red CHARGING (feeding) → green OVERCHARGED (sated)
+            string mood = Visualizer.GoalMood;
+            GoalMoodText.Text = mood switch
+            {
+                "Feeding" => "⚡ CHARGING",
+                "Sated"   => "⚡ OVERCHARGED",
+                _         => ""
+            };
+            GoalMoodText.Foreground = mood == "Feeding"
+                ? System.Windows.Media.Brushes.Lime
+                : System.Windows.Media.Brushes.Red;
+            // Blink the right dot when sated (overcharged)
+            GoalMoodText.Opacity = (mood == "Sated" && DateTime.Now.Millisecond % 500 < 250) ? 0.3 : 1.0;
+        }
+        else
+        {
+            GoalStatusText.Text = "● DISCHARGED";
+            GoalStatusText.Foreground = System.Windows.Media.Brushes.Lime;
+            GoalMoodText.Text = "";
+            GoalMoodText.Opacity = 1.0;
+        }
+
         // Refresh ball-info section only when the stage changes (not every frame).
         int stage = Visualizer.CurrentStage;
         if (stage != _lastPanelStage)
         {
             _lastPanelStage = stage;
+            _history.SetCurrentStage(stage);
             var p = BallPreset.Stages[Math.Min(stage, BallPreset.Stages.Length - 1)];
             BallNameDisplay.Text    = p.Name;
             BallIcon.Source         = BallSpriteImage(p.Kind);
@@ -313,7 +347,7 @@ public partial class MainWindow : Window
 
     private void OnRoundCompleted(BallKind kind, string ballName, TimeSpan elapsed)
     {
-        _history.Add(kind, ballName, elapsed);
+        _history.Complete(kind, elapsed);
     }
 
     // ── Now Playing ──────────────────────────────────────────────────────────
@@ -339,7 +373,6 @@ public partial class MainWindow : Window
         {
             NowPlayingHeader.Visibility  = Visibility.Collapsed;
             NowPlayingContent.Visibility = Visibility.Collapsed;
-            MetadataText.Text = "";
             return;
         }
 
@@ -348,11 +381,6 @@ public partial class MainWindow : Window
         NowPlayingApp.Text    = NowPlayingService.FormatAppName(_nowPlaying.SourceAppUserModelId);
         NowPlayingTitle.Text  = _nowPlaying.Title;
         NowPlayingArtist.Text = _nowPlaying.Artist;
-
-        // Green metadata strip (Corona.wms-style green LED text)
-        MetadataText.Text = string.IsNullOrEmpty(_nowPlaying.Artist)
-            ? _nowPlaying.Title
-            : $"{_nowPlaying.Artist} - {_nowPlaying.Title}";
 
         // App icon (synchronous — fast P/Invoke for unpackaged apps like Spotify.exe)
         NowPlayingAppIcon.Source = ExtractProcessIcon(_nowPlaying.SourceAppUserModelId);
@@ -431,7 +459,14 @@ public partial class MainWindow : Window
     }
 
     private void RainToggle_Changed(object sender, RoutedEventArgs e)
-        => Visualizer.SetRain(RainToggle.IsChecked == true);
+    {
+        bool on = RainToggle.IsChecked == true;
+        Visualizer.SetRain(on);
+        RainButtonImage.Effect = on
+            ? new System.Windows.Media.Effects.DropShadowEffect
+              { Color = System.Windows.Media.Colors.CornflowerBlue, BlurRadius = 10, ShadowDepth = 0, Opacity = 0.9 }
+            : null;
+    }
 
     // ===== Custom window chrome (WindowChrome takes over from native title bar) =====
 

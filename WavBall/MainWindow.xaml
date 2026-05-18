@@ -153,12 +153,13 @@
                     </Border.Background>
                 </Border>
 
-                <!-- Black visualizer area, inset by rail widths + metadata strip height -->
+                <!-- Black visualizer area, inset by rail widths + metadata strip visual height -->
                 <Border Background="Black" Margin="19,0,7,23">
                     <local:VisualizerElement x:Name="Visualizer" />
                 </Border>
 
-                <!-- Metadata strip at bottom of inner frame (player_bottom_left/middle/right) -->
+                <!-- Metadata strip at bottom of inner frame (player_bottom_left/middle/right).
+                     Background fills the 4px transparent gap at bottom of bottom_middle.png. -->
                 <Grid Height="23" VerticalAlignment="Bottom" Panel.ZIndex="1">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
@@ -180,10 +181,16 @@
                            Source="pack://application:,,,/Assets/Sprites/bottom_right.png"
                            Width="59" Height="23" Stretch="None" HorizontalAlignment="Right"
                            RenderOptions.BitmapScalingMode="NearestNeighbor"/>
-                    <TextBlock x:Name="MetadataText"
-                               Grid.Column="0" Margin="63,3,0,0"
+                    <!-- Goal status HUD: collidable indicator (left) + mood (right) -->
+                    <TextBlock x:Name="GoalStatusText"
+                               Grid.Column="0" Margin="25,3,0,0"
                                Foreground="#FF00FF00" FontFamily="Arial" FontSize="9" FontWeight="Bold"
-                               VerticalAlignment="Top" TextTrimming="CharacterEllipsis"
+                               VerticalAlignment="Top"
+                               IsHitTestVisible="False"/>
+                    <TextBlock x:Name="GoalMoodText"
+                               Grid.Column="1" Grid.ColumnSpan="2" Margin="0,3,8,0"
+                               Foreground="#FF00FF00" FontFamily="Arial" FontSize="9" FontWeight="Bold"
+                               VerticalAlignment="Top" HorizontalAlignment="Right"
                                IsHitTestVisible="False"/>
                 </Grid>
             </Grid>
@@ -422,7 +429,8 @@
                                     </Grid.Triggers>
                                 </Grid>
                                 <DataTemplate.Triggers>
-                                    <DataTrigger Binding="{Binding IsLatest}" Value="True">
+                                    <!-- Current ball in play → amber -->
+                                    <DataTrigger Binding="{Binding IsCurrent}" Value="True">
                                         <Setter TargetName="NameTb" Property="Foreground" Value="#FFFFD080"/>
                                         <Setter TargetName="TimeTb" Property="Foreground" Value="#FFFFD080"/>
                                     </DataTrigger>
@@ -494,6 +502,14 @@
                         Width="22" Height="21" Opacity="0" Cursor="Hand"
                         ToolTip="Next track" Click="NextTrackButton_Click"/>
 
+                <!-- MIC icon overlay — covers the speaker/mute glyph in the atlas -->
+                <Ellipse Canvas.Left="124" Canvas.Top="27" Width="16" Height="16"
+                         Fill="#FF3A6AA8" IsHitTestVisible="False"/>
+                <Path Canvas.Left="127" Canvas.Top="29" Width="10" Height="12"
+                      Data="{StaticResource WmpMicGeometry}"
+                      Stroke="#FFB8DCF4" StrokeThickness="1.2"
+                      Stretch="Uniform" IsHitTestVisible="False"/>
+
                 <!-- MIC toggle at mute position per transports_map.bmp -->
                 <ToggleButton x:Name="MicToggle" Canvas.Left="121" Canvas.Top="25"
                               Width="22" Height="21" Opacity="0" Cursor="Hand"
@@ -523,7 +539,7 @@
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
                             HorizontalAlignment="Left" Margin="12,0,0,0">
                     <TextBlock x:Name="MicLiveCaption"
-                               Text="LIVE"
+                               Text="MIC ON"
                                FontFamily="{StaticResource WmpChromeFontFamily}"
                                FontSize="9" FontWeight="Bold"
                                Foreground="{StaticResource WmpPlayGlyphBrush}"
@@ -534,20 +550,22 @@
                                               BlurRadius="6" ShadowDepth="0"/>
                         </TextBlock.Effect>
                     </TextBlock>
-
-                    <ui:ToggleSwitch x:Name="RainToggle" Content="Rain"
-                                     VerticalAlignment="Center"
-                                     IsChecked="False" Margin="16,0,0,0"
-                                     Checked="RainToggle_Changed" Unchecked="RainToggle_Changed"/>
                 </StackPanel>
             </Grid>
 
-            <!-- ===== Right chrome panel ===== -->
-            <Image Grid.Column="2"
-                   Source="pack://application:,,,/Assets/Sprites/equalizer_right.png"
-                   Width="59" Height="60" Stretch="None"
-                   HorizontalAlignment="Right" VerticalAlignment="Top"
-                   RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+            <!-- ===== Right chrome panel: >> button repurposed as Rain toggle ===== -->
+            <Canvas Grid.Column="2" Width="59" Height="60" ClipToBounds="True">
+                <Image x:Name="RainButtonImage"
+                       Source="pack://application:,,,/Assets/Sprites/equalizer_right.png"
+                       Canvas.Left="0" Canvas.Top="0" Width="59" Height="60"
+                       Stretch="None" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+
+                <!-- Invisible Rain toggle over the >> (FFWD) button area -->
+                <ToggleButton x:Name="RainToggle" Canvas.Left="16" Canvas.Top="1"
+                              Width="35" Height="13" Opacity="0" Cursor="Hand"
+                              ToolTip="Toggle Rain"
+                              Checked="RainToggle_Changed" Unchecked="RainToggle_Changed"/>
+            </Canvas>
         </Grid>
     </Grid>
     </Border>

@@ -98,4 +98,10 @@ public sealed class Goal : World
     {
         _goalRendering.BallRef = ball;
     }
+
+    /// <summary>Whether the goal is currently collidable (satiety above arm threshold).</summary>
+    public bool IsCollidable => _goalSteering.Satiety > ArmSatietyThreshold;
+
+    /// <summary>Current mood name ("Feeding" or "Sated").</summary>
+    public string CurrentMood => _goalSteering.CurrentMood;
 }
