@@ -20,7 +20,9 @@ A real-time audio spectrum visualizer and physics game for Windows built with WP
 - **Autonomous Goal Agent** — the goal is a "mosquito" that hunts for musical energy: a two-dimensional appetite machine (Charge sensor + Satiety integrator) cycles between Feeding (proximity-weighted loudest band) and Sated (retreats to a randomized altitude above the action via anti-centroid X), so it migrates across the playing field on a polyrhythmic schedule rather than locking to one peak
 - **Dual-Layer Goal Visual** — a cool cyan halo that grows with appetite-cycle state and pulses with bass kicks, around a warm gold ring that deforms into an oscilloscope-style squiggle on snare hits (high-frequency sinusoidal radial perturbation with exponential ring-out) — geometric shape encodes transient energy while brightness encodes collidability
 - **Per-Band Thermal Luminosity** — bars glow brighter with sustained activity; treble bands charge faster
-- **WMP9-Inspired Shell** — three-row Windows Media Player 9 ("Corona") chrome: top steel strip, visualizer in the middle, bottom transport panel with glass-bead media buttons (◀▏▶/⏸▏▶) and a green LED readout. Palette and glyph colors sampled from the original 2002 Microsoft `transports.bmp` sprite atlas; everything ships as WPF vector recreations (no Microsoft artwork embedded).
+- **WMP9-Inspired Shell** — three-row Windows Media Player 9 ("Corona") chrome: top title bar with custom icon + drag region + min/max/close, visualizer + 220px side panel in the middle, bottom transport strip. Glass-bead media buttons (◀▏▶/⏸▏⏹▏▶) and a system volume slider. Palette and glyph colors sampled from the original 2002 Microsoft `transports.bmp` sprite atlas; everything ships as WPF vector recreations (no Microsoft artwork embedded).
+- **Side Panel** — WMP9-style info panel: ball sprite icon (from game assets), physics stats (mass, restitution, radius in real-world units), LED round timer, and a round history list (one entry per ball type, clobbered on update, amber personal-best highlights, fade-in animation on new entries).
+- **System Volume Control** — master volume slider wired to the default audio endpoint via NAudio `MMDeviceEnumerator`; syncs bidirectionally with external changes (taskbar, hardware keys).
 - **System Media-Key Integration** — the ◀ / ▶ buttons send `VK_MEDIA_PREV_TRACK` / `VK_MEDIA_NEXT_TRACK` globally, so they skip tracks in whatever app is currently playing (Spotify, browsers, Groove, foobar, etc.) without requiring focus or per-app integration.
 
 ## Architecture
@@ -49,16 +51,20 @@ WavBall/
 │   └── TransientEvent.cs     # Cross-thread event types
 ├── Models/
 │   ├── CollisionInfo.cs      # Collision event data
-│   └── MouseState.cs         # Input state snapshot
+│   ├── MouseState.cs         # Input state snapshot
+│   └── RoundRecord.cs        # Completed-round data (ball kind, time, PB flag)
 ├── Services/
 │   ├── AudioCaptureService.cs    # WASAPI loopback capture via NAudio
 │   ├── FftProcessingService.cs   # Mel-scale FFT + per-band gain compensation
-│   └── MediaKeyService.cs        # P/Invoke wrapper for VK_MEDIA_* virtual keys
+│   ├── MediaKeyService.cs        # P/Invoke wrapper for VK_MEDIA_* virtual keys
+│   ├── RoundHistoryStore.cs      # 1:1 per-kind history, PB tracking, ObservableCollection
+│   ├── RoundTimerService.cs      # 4-state stopwatch (Idle/Running/Paused/Stopped)
+│   └── SystemVolumeService.cs    # NAudio MMDevice master volume read/write + external change events
 ├── Themes/
 │   └── Wmp9.xaml                 # WMP9 "Corona" palette + glass-bead transport button style
 ├── Scene.cs                  # Game loop: fixed-timestep physics + render
 ├── VisualizerElement.cs      # WPF host: entity management, layer toggles
-├── MainWindow.xaml/.cs       # WMP9 shell (3-row Grid: chrome / visualizer / transport+LED)
+├── MainWindow.xaml/.cs       # WMP9 shell (3-row Grid: chrome / visualizer+panel / transport)
 └── App.xaml/.cs              # Application entry point (merges Wmp9.xaml resources)
 ```
 
@@ -101,10 +107,10 @@ WavBall/
 git clone https://github.com/HarryJamesGreenblatt/WavBall.git
 cd WavBall
 dotnet build
-dotnet run --project WavBall▶** (the amber play bead in the bottom strip)
+dotnet run --project WavBall
 ```
 
-Play audio through your default output device, then click **Start**.
+Play audio through your default output device, then click **▶** (the amber play bead in the bottom strip).
 
 ## License
 
