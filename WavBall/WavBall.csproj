@@ -23,6 +23,7 @@
   <ItemGroup>
     <Resource Include="Assets\Generated\*.png" />
     <Resource Include="Assets\Images\Icon.png" />
+    <Resource Include="Assets\Images\Icon.ico" />
   </ItemGroup>
 
 </Project>

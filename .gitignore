@@ -27,6 +27,10 @@ Scripts/
 # Reference images (design source material)
 WavBall/Assets/Images/Reference/
 
+# Third-party reference assets (Microsoft WMP skins — design ground truth only, never shipped)
+WavBall/Assets/MSOfficialWMPSkins/
+WavBall/Assets/WMPSkinsExtracted/
+
 # OS
 Thumbs.db
 .DS_Store

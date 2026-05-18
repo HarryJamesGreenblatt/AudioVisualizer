@@ -1,0 +1,214 @@
+<!--
+    WMP9 "Corona" palette — powder-blue chrome (per user-supplied screenshot of
+    WMP9 running on Windows XP). Originally interpreted as cool-steel, but the
+    actual Corona chrome is a light powder-blue gradient much closer to Luna.
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ===== Corona powder-blue chrome palette (deepest → lightest) ===== -->
+    <Color x:Key="WmpSteel900Color">#FF3858A0</Color>  <!-- chassis rim / deep edge -->
+    <Color x:Key="WmpSteel700Color">#FF6890C0</Color>  <!-- mid-deep gradient stop -->
+    <Color x:Key="WmpSteel500Color">#FF8FB4D8</Color>  <!-- mid powder-blue -->
+    <Color x:Key="WmpSteel400Color">#FFB4D0E8</Color>  <!-- light powder-blue -->
+    <Color x:Key="WmpSteel300Color">#FFCCDFF0</Color>  <!-- highlight light blue -->
+    <Color x:Key="WmpSteel100Color">#FFE4EEF8</Color>  <!-- topmost glassy highlight -->
+
+    <SolidColorBrush x:Key="WmpSteel900Brush" Color="{StaticResource WmpSteel900Color}"/>
+    <SolidColorBrush x:Key="WmpSteel700Brush" Color="{StaticResource WmpSteel700Color}"/>
+    <SolidColorBrush x:Key="WmpSteel500Brush" Color="{StaticResource WmpSteel500Color}"/>
+    <SolidColorBrush x:Key="WmpSteel400Brush" Color="{StaticResource WmpSteel400Color}"/>
+    <SolidColorBrush x:Key="WmpSteel300Brush" Color="{StaticResource WmpSteel300Color}"/>
+    <SolidColorBrush x:Key="WmpSteel100Brush" Color="{StaticResource WmpSteel100Color}"/>
+
+    <!-- ===== Neutral grays (Corona accents) ===== -->
+    <Color x:Key="WmpGray900Color">#FF303030</Color>
+    <Color x:Key="WmpGray700Color">#FF606060</Color>
+    <Color x:Key="WmpGray600Color">#FF808080</Color>
+    <Color x:Key="WmpGray500Color">#FF909090</Color>
+    <Color x:Key="WmpGray300Color">#FFC0C0C0</Color>
+    <Color x:Key="WmpGray100Color">#FFF0F0F0</Color>
+
+    <SolidColorBrush x:Key="WmpGray900Brush" Color="{StaticResource WmpGray900Color}"/>
+    <SolidColorBrush x:Key="WmpGray700Brush" Color="{StaticResource WmpGray700Color}"/>
+    <SolidColorBrush x:Key="WmpGray600Brush" Color="{StaticResource WmpGray600Color}"/>
+    <SolidColorBrush x:Key="WmpGray500Brush" Color="{StaticResource WmpGray500Color}"/>
+    <SolidColorBrush x:Key="WmpGray300Brush" Color="{StaticResource WmpGray300Color}"/>
+    <SolidColorBrush x:Key="WmpGray100Brush" Color="{StaticResource WmpGray100Color}"/>
+
+    <!-- ===== Semantic aliases (preferred for app use; remap freely without touching call sites) ===== -->
+    <SolidColorBrush x:Key="WmpChromeBackgroundBrush"   Color="{StaticResource WmpSteel500Color}"/>
+    <SolidColorBrush x:Key="WmpChromeShadowBrush"       Color="{StaticResource WmpSteel900Color}"/>
+    <SolidColorBrush x:Key="WmpChromeHighlightBrush"    Color="{StaticResource WmpSteel100Color}"/>
+    <SolidColorBrush x:Key="WmpPanelBackgroundBrush"    Color="{StaticResource WmpSteel400Color}"/>
+    <SolidColorBrush x:Key="WmpInsetBackgroundBrush"    Color="{StaticResource WmpGray900Color}"/>
+    <SolidColorBrush x:Key="WmpReadoutForegroundBrush"  Color="{StaticResource WmpSteel100Color}"/>
+    <SolidColorBrush x:Key="WmpBodyTextBrush"           Color="{StaticResource WmpGray900Color}"/>
+    <SolidColorBrush x:Key="WmpMutedTextBrush"          Color="{StaticResource WmpGray700Color}"/>
+
+    <!-- ===== Vertical "brushed-steel" gradient (top → bottom) ===== -->
+    <LinearGradientBrush x:Key="WmpChromeVerticalBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Offset="0.0" Color="{StaticResource WmpSteel100Color}"/>
+        <GradientStop Offset="0.5" Color="{StaticResource WmpSteel400Color}"/>
+        <GradientStop Offset="1.0" Color="{StaticResource WmpSteel700Color}"/>
+    </LinearGradientBrush>
+
+    <!-- Inverse (light at bottom) — used for pressed/recessed states -->
+    <LinearGradientBrush x:Key="WmpChromeVerticalInverseBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Offset="0.0" Color="{StaticResource WmpSteel700Color}"/>
+        <GradientStop Offset="0.5" Color="{StaticResource WmpSteel400Color}"/>
+        <GradientStop Offset="1.0" Color="{StaticResource WmpSteel100Color}"/>
+    </LinearGradientBrush>
+
+    <!-- ===== Typography (WMP9 used Tahoma; Segoe UI is the modern equivalent on Win10+) ===== -->
+    <FontFamily x:Key="WmpChromeFontFamily">Tahoma, Segoe UI</FontFamily>
+    <FontFamily x:Key="WmpReadoutFontFamily">Consolas, Lucida Console, Courier New</FontFamily>
+
+    <!-- ===== Transport glyph geometries (vector, DPI-crisp) ===== -->
+    <!-- Play: rightward triangle in a 10x10 box -->
+    <Geometry x:Key="WmpPlayGeometry">M0,0 L0,10 L9,5 Z</Geometry>
+    <!-- Stop: filled square in a 10x10 box -->
+    <Geometry x:Key="WmpStopGeometry">M1,1 H9 V9 H1 Z</Geometry>
+    <!-- Pause: two vertical bars in a 10x10 box (reserved for future use) -->
+    <Geometry x:Key="WmpPauseGeometry">M1,0 H4 V10 H1 Z M6,0 H9 V10 H6 Z</Geometry>
+    <!-- Prev-track: left-pointing triangle + vertical bar on its left edge -->
+    <Geometry x:Key="WmpPrevTrackGeometry">M0,0 H2 V10 H0 Z M10,0 L10,10 L3,5 Z</Geometry>
+    <!-- Next-track: right-pointing triangle + vertical bar on its right edge -->
+    <Geometry x:Key="WmpNextTrackGeometry">M0,0 L0,10 L7,5 Z M8,0 H10 V10 H8 Z</Geometry>
+
+    <!-- ===== Glass-bead palette (sampled from Corona's transports.bmp) ===== -->
+    <!-- Deep blue glass body -->
+    <Color x:Key="WmpBeadHighlightColor">#FFB8DCF4</Color>  <!-- light blue gloss top -->
+    <Color x:Key="WmpBeadMidColor">      #FF3A6AA8</Color>  <!-- mid body blue -->
+    <Color x:Key="WmpBeadShadowColor">   #FF153A6E</Color>  <!-- deep shadow base -->
+    <Color x:Key="WmpBeadRimColor">      #FF0A1F44</Color>  <!-- darkest rim -->
+    <!-- Play-button signature amber/orange (Corona's only colored glyph) -->
+    <Color x:Key="WmpPlayAmberColor">    #FFFF8A1F</Color>
+    <Color x:Key="WmpPlayAmberCoreColor">#FFFFD080</Color>
+    <!-- Steel glyph for non-play buttons -->
+    <Color x:Key="WmpGlyphSteelColor">   #FFE7EDF1</Color>
+
+    <!-- Glass body: vertical gradient simulating glossy bead shading -->
+    <LinearGradientBrush x:Key="WmpBeadBodyBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Offset="0.00" Color="{StaticResource WmpBeadHighlightColor}"/>
+        <GradientStop Offset="0.45" Color="{StaticResource WmpBeadMidColor}"/>
+        <GradientStop Offset="1.00" Color="{StaticResource WmpBeadShadowColor}"/>
+    </LinearGradientBrush>
+
+    <!-- Pressed-state: invert vertical gradient (light at bottom = recessed) -->
+    <LinearGradientBrush x:Key="WmpBeadBodyPressedBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Offset="0.00" Color="{StaticResource WmpBeadShadowColor}"/>
+        <GradientStop Offset="0.55" Color="{StaticResource WmpBeadMidColor}"/>
+        <GradientStop Offset="1.00" Color="{StaticResource WmpBeadHighlightColor}"/>
+    </LinearGradientBrush>
+
+    <!-- Specular highlight: bright elliptical sheen on upper half of bead -->
+    <RadialGradientBrush x:Key="WmpBeadSpecularBrush"
+                         GradientOrigin="0.5,0.0" Center="0.5,0.0"
+                         RadiusX="0.6" RadiusY="0.5">
+        <GradientStop Offset="0.0" Color="#FFFFFFFF"/>
+        <GradientStop Offset="1.0" Color="#00FFFFFF"/>
+    </RadialGradientBrush>
+
+    <!-- Glyph brushes -->
+    <SolidColorBrush x:Key="WmpPlayGlyphBrush"  Color="{StaticResource WmpPlayAmberColor}"/>
+    <SolidColorBrush x:Key="WmpStopGlyphBrush"  Color="{StaticResource WmpGlyphSteelColor}"/>
+    <SolidColorBrush x:Key="WmpBeadRimBrush"    Color="{StaticResource WmpBeadRimColor}"/>
+
+    <!-- ===== Transport button style (Corona-style glass bead) ===== -->
+    <Style x:Key="WmpTransportButtonStyle" TargetType="Button">
+        <Setter Property="Width"  Value="32"/>
+        <Setter Property="Height" Value="32"/>
+        <Setter Property="Background" Value="{StaticResource WmpBeadBodyBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource WmpBeadRimBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid x:Name="root">
+                        <!-- Outer dark rim -->
+                        <Ellipse Stroke="{TemplateBinding BorderBrush}"
+                                 StrokeThickness="{TemplateBinding BorderThickness}"
+                                 Fill="{TemplateBinding Background}"/>
+                        <!-- Specular highlight on the upper hemisphere -->
+                        <Ellipse x:Name="specular"
+                                 Margin="3,2,3,12"
+                                 Fill="{StaticResource WmpBeadSpecularBrush}"
+                                 Opacity="0.85"
+                                 IsHitTestVisible="False"/>
+                        <!-- Glyph -->
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="specular" Property="Opacity" Value="1.0"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ===== Window chrome buttons (min / max / close) =====
+         Plain steel rectangles with hover lift; close button gets a red hover.
+         WindowChrome.IsHitTestVisibleInChrome=True is set per-button in the host XAML. -->
+    <Geometry x:Key="WmpMinimizeGeometry">M0,5 H10 V6 H0 Z</Geometry>
+    <Geometry x:Key="WmpMaximizeGeometry">M0,0 H10 V10 H0 Z M1,1 V9 H9 V1 Z</Geometry>
+    <Geometry x:Key="WmpRestoreGeometry">M2,0 H10 V8 H8 V2 H2 Z M0,2 H8 V10 H0 Z M1,3 V9 H7 V3 Z</Geometry>
+    <Geometry x:Key="WmpCloseGeometry">M0,0 L10,10 M10,0 L0,10</Geometry>
+
+    <Style x:Key="WmpWindowButtonStyle" TargetType="Button">
+        <Setter Property="Width"  Value="34" />
+        <Setter Property="Height" Value="24" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Cursor" Value="Arrow" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="bg"
+                            Background="{TemplateBinding Background}">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bg" Property="Background" Value="#33FFFFFF"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="bg" Property="Background" Value="#55000000"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="WmpCloseButtonStyle" TargetType="Button" BasedOn="{StaticResource WmpWindowButtonStyle}">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="bg"
+                            Background="{TemplateBinding Background}">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bg" Property="Background" Value="#E81123"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="bg" Property="Background" Value="#F1707A"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+</ResourceDictionary>

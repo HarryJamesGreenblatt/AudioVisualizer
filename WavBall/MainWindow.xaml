@@ -4,30 +4,388 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:local="clr-namespace:WavBall"
         mc:Ignorable="d"
         Title="Windows WavBall" Height="400" Width="900"
-        Icon="Assets/Images/Icon.png"
-        Background="Black" Closing="Window_Closing">
+        Icon="Assets/Images/Icon.ico"
+        Background="Black"
+        WindowStyle="None"
+        ResizeMode="CanResize"
+        StateChanged="Window_StateChanged"
+        Closing="Window_Closing">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="36"
+                            ResizeBorderThickness="6"
+                            GlassFrameThickness="0"
+                            UseAeroCaptionButtons="False"
+                            CornerRadius="0" />
+    </shell:WindowChrome.WindowChrome>
+
+    <!-- Outer chassis: thin dark frame around the whole shell (Corona-style chrome edge).
+         Margin compensates for the maximized-state overflow Windows applies to WindowChrome'd
+         windows (otherwise the chrome bleeds 7px off-screen). Adjusted by Window_StateChanged. -->
+    <Border x:Name="OuterChassis"
+            BorderBrush="{StaticResource WmpChromeShadowBrush}"
+            BorderThickness="1"
+            CornerRadius="6"
+            Background="{StaticResource WmpChromeVerticalBrush}"
+            ClipToBounds="True">
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
+            <RowDefinition Height="36" />   <!-- svTop: LED display panel embedded in chrome -->
+            <RowDefinition Height="*"  />   <!-- svMiddle: visualizer in inset bezel -->
+            <RowDefinition Height="38" />   <!-- svBottom: transport bar with embossed lift -->
         </Grid.RowDefinitions>
 
-        <local:VisualizerElement x:Name="Visualizer" Grid.Row="0" />
+        <!-- ===== svTop: title bar + LED display + window controls (we OWN the chrome now) =====
+             Whole strip is draggable by WindowChrome (CaptionHeight=36). Interactive children
+             opt out via WindowChrome.IsHitTestVisibleInChrome="True". -->
+        <Border Grid.Row="0"
+                Background="{StaticResource WmpChromeVerticalBrush}"
+                BorderBrush="{StaticResource WmpChromeShadowBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="6,3,0,3">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />  <!-- App icon + title -->
+                    <ColumnDefinition Width="*"    />  <!-- LED panel -->
+                    <ColumnDefinition Width="Auto" />  <!-- Min / Max / Close -->
+                </Grid.ColumnDefinitions>
 
-        <StackPanel Grid.Row="1" Orientation="Horizontal"
-                    HorizontalAlignment="Center" VerticalAlignment="Center"
-                    Margin="0,6,0,6">
-            <Button x:Name="StartStopButton" Content="Start"
-                    Foreground="White" Background="#333333"
-                    Width="80" Margin="8,0"
-                    Click="StartStopButton_Click" />
+                <!-- Icon + brand mark -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="2,0,8,0">
+                    <Image Source="Assets/Images/Icon.png" Width="16" Height="16" Margin="0,0,6,0"
+                           RenderOptions.BitmapScalingMode="HighQuality"/>
+                    <TextBlock Text="Windows WavBall"
+                               FontFamily="{StaticResource WmpChromeFontFamily}"
+                               FontSize="11" FontWeight="Bold"
+                               Foreground="{StaticResource WmpBodyTextBrush}"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
 
-            <ui:ToggleSwitch x:Name="RainToggle" Content="Rain"
-                             IsChecked="False" Margin="8,0"
-                             Checked="RainToggle_Changed" Unchecked="RainToggle_Changed" />
-        </StackPanel>
+                <!-- Col 1: drag region (spacer — timer lives in side panel) -->
+
+                <!-- Window control buttons -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Stretch">
+                    <Button x:Name="MinimizeButton"
+                            Style="{StaticResource WmpWindowButtonStyle}"
+                            ToolTip="Minimize"
+                            Click="MinimizeButton_Click"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                        <Path Data="{StaticResource WmpMinimizeGeometry}"
+                              Stroke="{StaticResource WmpBodyTextBrush}"
+                              StrokeThickness="1"
+                              Width="10" Height="10"/>
+                    </Button>
+                    <Button x:Name="MaximizeButton"
+                            Style="{StaticResource WmpWindowButtonStyle}"
+                            ToolTip="Maximize"
+                            Click="MaximizeButton_Click"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                        <Path x:Name="MaximizeGlyph"
+                              Data="{StaticResource WmpMaximizeGeometry}"
+                              Stroke="{StaticResource WmpBodyTextBrush}"
+                              StrokeThickness="1"
+                              Width="10" Height="10"/>
+                    </Button>
+                    <Button x:Name="CloseButton"
+                            Style="{StaticResource WmpCloseButtonStyle}"
+                            ToolTip="Close"
+                            Click="CloseButton_Click"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                        <Path Data="{StaticResource WmpCloseGeometry}"
+                              Stroke="{StaticResource WmpBodyTextBrush}"
+                              StrokeThickness="1"
+                              Width="10" Height="10"/>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ===== svMiddle: visualizer (left) + ball-data side panel (right, WMP9-style) ===== -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>    <!-- Visualizer -->
+                <ColumnDefinition Width="220"/>  <!-- Side panel -->
+            </Grid.ColumnDefinitions>
+
+            <!-- Visualizer in dark recessed bezel -->
+            <Border Grid.Column="0"
+                    Background="Black"
+                    BorderBrush="{StaticResource WmpChromeShadowBrush}"
+                    BorderThickness="1,0,0,0">
+                <Border BorderBrush="#33000000" BorderThickness="1,1,1,1">
+                    <local:VisualizerElement x:Name="Visualizer" />
+                </Border>
+            </Border>
+
+            <!-- Side panel: ball stats, timer, round history -->
+            <Border Grid.Column="1"
+                    Background="#FF0D1828"
+                    BorderBrush="{StaticResource WmpChromeShadowBrush}"
+                    BorderThickness="1,0,0,0"
+                    ClipToBounds="True">
+                <DockPanel>
+
+                    <!-- ① Header -->
+                    <Border DockPanel.Dock="Top" Background="#FF1C3050" Padding="8,5">
+                        <TextBlock Text="Ball Info"
+                                   Foreground="#FF90C4E8"
+                                   FontFamily="{StaticResource WmpChromeFontFamily}"
+                                   FontSize="11" FontWeight="Bold"
+                                   HorizontalAlignment="Center"/>
+                    </Border>
+
+                    <!-- ② Ball icon + name + stage (like album-art area) -->
+                    <Border DockPanel.Dock="Top" Padding="10,10,10,6">
+                        <StackPanel HorizontalAlignment="Center">
+                            <Border Width="80" Height="80"
+                                    Background="#FF0A1528"
+                                    BorderBrush="#FF2A4878"
+                                    BorderThickness="1"
+                                    HorizontalAlignment="Center"
+                                    Margin="0,0,0,6">
+                                <Image x:Name="BallIcon"
+                                       Source="Assets/Generated/beach-ball.png"
+                                       Width="60" Height="60"
+                                       RenderOptions.BitmapScalingMode="HighQuality"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"/>
+                            </Border>
+                            <TextBlock x:Name="BallNameDisplay"
+                                       Text="Beach Ball"
+                                       Foreground="White"
+                                       FontFamily="{StaticResource WmpChromeFontFamily}"
+                                       FontSize="12" FontWeight="Bold"
+                                       HorizontalAlignment="Center"
+                                       Margin="0,0,0,2"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ③ Ball physics stats -->
+                    <Border DockPanel.Dock="Top"
+                            Background="#FF0A1020"
+                            Padding="10,6"
+                            Margin="0,0,0,0">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Mass"
+                                       Foreground="#FF5A8AB0" FontSize="10"
+                                       FontFamily="{StaticResource WmpChromeFontFamily}" Margin="0,2"/>
+                            <TextBlock x:Name="StatMass" Grid.Row="0" Grid.Column="1"
+                                       Text="—" Foreground="#FFCCE0F0" FontSize="10"
+                                       FontFamily="{StaticResource WmpReadoutFontFamily}"/>
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Restitution"
+                                       Foreground="#FF5A8AB0" FontSize="10"
+                                       FontFamily="{StaticResource WmpChromeFontFamily}" Margin="0,2"/>
+                            <TextBlock x:Name="StatRestitution" Grid.Row="1" Grid.Column="1"
+                                       Text="—" Foreground="#FFCCE0F0" FontSize="10"
+                                       FontFamily="{StaticResource WmpReadoutFontFamily}"/>
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Radius"
+                                       Foreground="#FF5A8AB0" FontSize="10"
+                                       FontFamily="{StaticResource WmpChromeFontFamily}" Margin="0,2"/>
+                            <TextBlock x:Name="StatRadius" Grid.Row="2" Grid.Column="1"
+                                       Text="—" Foreground="#FFCCE0F0" FontSize="10"
+                                       FontFamily="{StaticResource WmpReadoutFontFamily}"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- ④ Timer header + LED readout (full-width, matching section headers) -->
+                    <Border DockPanel.Dock="Top" Background="#FF1C3050" Padding="8,4">
+                        <TextBlock Text="Timer"
+                                   Foreground="#FF90C4E8"
+                                   FontFamily="{StaticResource WmpChromeFontFamily}"
+                                   FontSize="10" FontWeight="Bold"
+                                   HorizontalAlignment="Center"/>
+                    </Border>
+                    <Border DockPanel.Dock="Top"
+                            Background="#FF000000"
+                            Padding="8,5"
+                            Margin="0,0,0,4">
+                        <TextBlock x:Name="TimerDisplay"
+                                   Text="● READY"
+                                   Foreground="#FF00FF00"
+                                   FontFamily="{StaticResource WmpReadoutFontFamily}"
+                                   FontSize="14" FontWeight="Bold"
+                                   HorizontalAlignment="Center"/>
+                    </Border>
+
+                    <!-- ⑥ Round history header -->
+                    <Border DockPanel.Dock="Top" Background="#FF1C3050" Padding="8,4">
+                        <TextBlock Text="Round History"
+                                   Foreground="#FF90C4E8"
+                                   FontFamily="{StaticResource WmpChromeFontFamily}"
+                                   FontSize="10" FontWeight="Bold"
+                                   HorizontalAlignment="Center"/>
+                    </Border>
+
+                    <!-- ⑥ Round history list (fills remaining height, like WMP9 playlist) -->
+                    <ListBox x:Name="RoundHistoryList"
+                             Background="#FF080E18"
+                             BorderThickness="0"
+                             Foreground="White"
+                             FontFamily="{StaticResource WmpChromeFontFamily}"
+                             FontSize="10"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             VirtualizingPanel.IsVirtualizing="True">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Padding" Value="8,3"/>
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                <Setter Property="Focusable" Value="False"/>
+                                <Setter Property="IsHitTestVisible" Value="False"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListBoxItem">
+                                            <Border x:Name="Bd" Background="Transparent"
+                                                    Padding="{TemplateBinding Padding}">
+                                                <ContentPresenter/>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock x:Name="NameTb" Grid.Column="0"
+                                               Text="{Binding BallName}"
+                                               Foreground="White"
+                                               TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock x:Name="TimeTb" Grid.Column="1"
+                                               Text="{Binding ElapsedFormatted}"
+                                               Foreground="White"
+                                               Margin="8,0,0,0"/>
+                                    <!-- Fade-in when a record is added or clobbered -->
+                                    <Grid.Triggers>
+                                        <EventTrigger RoutedEvent="Loaded">
+                                            <BeginStoryboard>
+                                                <Storyboard>
+                                                    <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                     From="0" To="1" Duration="0:0:0.4"/>
+                                                </Storyboard>
+                                            </BeginStoryboard>
+                                        </EventTrigger>
+                                    </Grid.Triggers>
+                                </Grid>
+                                <DataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding IsPersonalBest}" Value="True">
+                                        <Setter TargetName="NameTb" Property="Foreground" Value="#FFFFD080"/>
+                                        <Setter TargetName="TimeTb" Property="Foreground" Value="#FFFFD080"/>
+                                    </DataTrigger>
+                                </DataTemplate.Triggers>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                </DockPanel>
+            </Border>
+        </Grid>
+
+        <!-- ===== svBottom: transport bar with embossed top edge =====
+             1px highlight above 1px shadow = "lifted brushed-metal" feel. -->
+        <Border Grid.Row="2"
+                Background="{StaticResource WmpChromeVerticalInverseBrush}"
+                BorderBrush="{StaticResource WmpChromeHighlightBrush}"
+                BorderThickness="0,1,0,0">
+            <Border BorderBrush="{StaticResource WmpChromeShadowBrush}"
+                    BorderThickness="0,1,0,0">
+                <Grid Margin="8,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />  <!-- Transports -->
+                        <ColumnDefinition Width="Auto" />  <!-- Rain toggle -->
+                        <ColumnDefinition Width="*"    />  <!-- spacer -->
+                        <ColumnDefinition Width="Auto" />  <!-- Volume -->
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button x:Name="PrevTrackButton"
+                                Style="{StaticResource WmpTransportButtonStyle}"
+                                ToolTip="Previous track"
+                                Margin="0,0,4,0"
+                                Click="PrevTrackButton_Click">
+                            <Path Data="{StaticResource WmpPrevTrackGeometry}"
+                                  Fill="{StaticResource WmpStopGlyphBrush}"
+                                  Stretch="Uniform"
+                                  Width="12" Height="12"/>
+                        </Button>
+                        <Button x:Name="StartStopButton"
+                                Style="{StaticResource WmpTransportButtonStyle}"
+                                ToolTip="Play"
+                                Margin="0,0,4,0"
+                                Click="StartStopButton_Click">
+                            <Grid Width="12" Height="12">
+                                <Path x:Name="PlayGlyph"
+                                      Data="{StaticResource WmpPlayGeometry}"
+                                      Fill="{StaticResource WmpPlayGlyphBrush}"
+                                      Stretch="Uniform"
+                                      Visibility="Visible"/>
+                                <Path x:Name="PauseGlyph"
+                                      Data="{StaticResource WmpPauseGeometry}"
+                                      Fill="{StaticResource WmpStopGlyphBrush}"
+                                      Stretch="Uniform"
+                                      Visibility="Collapsed"/>
+                            </Grid>
+                        </Button>
+                        <Button x:Name="StopButton"
+                                Style="{StaticResource WmpTransportButtonStyle}"
+                                ToolTip="Stop"
+                                Margin="0,0,4,0"
+                                Click="StopButton_Click">
+                            <Path Data="{StaticResource WmpStopGeometry}"
+                                  Fill="{StaticResource WmpStopGlyphBrush}"
+                                  Stretch="Uniform"
+                                  Width="12" Height="12"/>
+                        </Button>
+                        <Button x:Name="NextTrackButton"
+                                Style="{StaticResource WmpTransportButtonStyle}"
+                                ToolTip="Next track"
+                                Margin="0,0,12,0"
+                                Click="NextTrackButton_Click">
+                            <Path Data="{StaticResource WmpNextTrackGeometry}"
+                                  Fill="{StaticResource WmpStopGlyphBrush}"
+                                  Stretch="Uniform"
+                                  Width="12" Height="12"/>
+                        </Button>
+                    </StackPanel>
+
+                    <!-- System master volume (NAudio AudioEndpointVolume) -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
+                        <TextBlock Text="🔊" FontSize="14" VerticalAlignment="Center"
+                                   Margin="0,0,6,0"
+                                   Foreground="{StaticResource WmpBodyTextBrush}"/>
+                        <Slider x:Name="VolumeSlider"
+                                Width="120"
+                                Minimum="0" Maximum="1"
+                                SmallChange="0.02" LargeChange="0.1"
+                                TickFrequency="0.1"
+                                IsMoveToPointEnabled="True"
+                                VerticalAlignment="Center"
+                                ValueChanged="VolumeSlider_ValueChanged"
+                                ToolTip="System volume"/>
+                    </StackPanel>
+
+                    <ui:ToggleSwitch Grid.Column="3" x:Name="RainToggle" Content="Rain"
+                                     VerticalAlignment="Center"
+                                     IsChecked="False"
+                                     Checked="RainToggle_Changed" Unchecked="RainToggle_Changed" />
+                </Grid>
+            </Border>
+        </Border>
     </Grid>
+    </Border>
 </Window>

@@ -5,6 +5,7 @@ using WavBall.Components;
 using WavBall.Configuration;
 using WavBall.Entities;
 using WavBall.Models;
+using WavBall.Services;
 
 namespace WavBall;
 
@@ -42,6 +43,12 @@ public sealed class VisualizerElement : FrameworkElement
     /// has made contact with the bar/peak surface, preventing drop-in cheats.
     /// </summary>
     private bool _goalSuppressed;
+
+    /// <summary>Round-timer service: starts on ball spawn, stops on goal hit.</summary>
+    private readonly RoundTimerService _timer = new();
+
+    /// <summary>True while audio capture is active — controls whether ball spawn starts the timer.</summary>
+    private bool _audioRunning;
     #endregion
 
     #region Properties
@@ -67,6 +74,37 @@ public sealed class VisualizerElement : FrameworkElement
     public string CurrentBallName => _currentStage < BallPreset.Stages.Length
         ? BallPreset.Stages[_currentStage].Name
         : "???";
+
+    /// <summary>Pre-formatted LED-style readout for the round timer (e.g. "▶ 00:14.27").</summary>
+    public string LedText => _timer.GetReadout();
+
+    /// <summary>Suspend timing when audio capture stops or pauses.</summary>
+    public void PauseRoundTimer()
+    {
+        _audioRunning = false;
+        _timer.Pause();
+    }
+
+    /// <summary>
+    /// Begin or resume timing when audio capture starts.
+    /// • Paused  → resumes from the saved elapsed value.
+    /// • Idle / stopped → starts a fresh count for the current ball (new round).
+    /// </summary>
+    public void ResumeRoundTimer()
+    {
+        _audioRunning = true;
+        if (_ball == null) return;
+        if (_timer.IsPaused)
+            _timer.Resume();
+        else if (!_timer.IsRunning)
+            _timer.Start();
+    }
+
+    /// <summary>
+    /// Fired on the UI thread when a ball reaches the goal.
+    /// Carries: ball kind, ball name, and the final elapsed round time.
+    /// </summary>
+    public event Action<BallKind, string, TimeSpan>? RoundCompleted;
     #endregion
 
     #region Constructor
@@ -190,6 +228,10 @@ public sealed class VisualizerElement : FrameworkElement
                 pp.BallEntityRef = _ball;
 
             _scene.Add(_ball);
+
+            // Start timing immediately if audio is already playing; otherwise show READY
+            // and wait for the user to hit Play.
+            if (_audioRunning) _timer.Start();
         }
         else if (!enabled && _ball != null)
         {
@@ -203,6 +245,9 @@ public sealed class VisualizerElement : FrameworkElement
             _goal?.SetBallRef(null);
 
             _ball = null;
+
+            // Ball toggled off without a goal hit — wipe readout back to idle.
+            _timer.Reset();
         }
     }
     #endregion
@@ -295,6 +340,15 @@ public sealed class VisualizerElement : FrameworkElement
     private void OnGoalHit(World goal, CollisionInfo info)
     {
         if (_ball == null) return;
+
+        // Freeze the round timer at the moment of capture.
+        _timer.Stop();
+
+        // Notify listeners — snapshot stage BEFORE it increments below.
+        RoundCompleted?.Invoke(
+            BallPreset.Stages[_currentStage].Kind,
+            BallPreset.Stages[_currentStage].Name,
+            _timer.Elapsed);
 
         // Vaporize: particle burst from ball position with colors matching the ball
         var ballPos = _ball.Position;
