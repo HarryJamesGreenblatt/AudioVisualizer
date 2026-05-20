@@ -74,9 +74,11 @@ jobs:
       - name: Create MSIX package
         shell: pwsh
         run: |
-          $sdkBin = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\10.*\x64" |
-            Sort-Object Name -Descending | Select-Object -First 1
-          & "$sdkBin\MakeAppx.exe" pack /d publish-msix /p WavBall.msix /o
+          $makeAppx = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\MakeAppx.exe" -ErrorAction SilentlyContinue |
+            Sort-Object { $_.Directory.Parent.Name } -Descending | Select-Object -First 1
+          if (-not $makeAppx) { throw "MakeAppx.exe not found in Windows SDK" }
+          Write-Host "Using: $($makeAppx.FullName)"
+          & $makeAppx.FullName pack /d publish-msix /p WavBall.msix /o
 
       - name: Sign MSIX
         shell: pwsh
@@ -85,9 +87,11 @@ jobs:
           $pfxPath = "$env:RUNNER_TEMP\cert.pfx"
           [IO.File]::WriteAllBytes($pfxPath, $pfxBytes)
 
-          $sdkBin = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\10.*\x64" |
-            Sort-Object Name -Descending | Select-Object -First 1
-          & "$sdkBin\SignTool.exe" sign /fd SHA256 /a `
+          $signTool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\SignTool.exe" -ErrorAction SilentlyContinue |
+            Sort-Object { $_.Directory.Parent.Name } -Descending | Select-Object -First 1
+          if (-not $signTool) { throw "SignTool.exe not found in Windows SDK" }
+          Write-Host "Using: $($signTool.FullName)"
+          & $signTool.FullName sign /fd SHA256 /a `
             /f $pfxPath `
             /p "${{ secrets.MSIX_CERT_PASSWORD }}" `
             /tr http://timestamp.digicert.com /td SHA256 `
