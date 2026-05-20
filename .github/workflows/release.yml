@@ -17,7 +17,19 @@ jobs:
         with:
           dotnet-version: '9.0.x'
 
-      - name: Publish
+      - name: Parse version from tag
+        id: version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}" -replace '^v', ''
+          $parts = $tag.Split('.')
+          $major = $parts[0]; $minor = $parts[1]; $patch = $parts[2]
+          $msixVersion = "$major.$minor.$patch.0"
+          echo "MSIX_VERSION=$msixVersion" >> $env:GITHUB_OUTPUT
+          echo "TAG_VERSION=$tag" >> $env:GITHUB_OUTPUT
+
+      # ── Portable build (single-file exe ZIP) ──
+      - name: Publish portable
         run: >
           dotnet publish WavBall/WavBall.csproj
           -c Release
@@ -30,11 +42,79 @@ jobs:
           -p:DebugType=embedded
           -o publish
 
-      - name: Upload artifact
+      - name: Upload portable artifact
         uses: actions/upload-artifact@v4
         with:
           name: WavBall-win-x64
           path: publish/
+
+      # ── MSIX build ──
+      - name: Publish for MSIX
+        run: >
+          dotnet publish WavBall/WavBall.csproj
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:PublishReadyToRun=true
+          -p:DebugType=embedded
+          -o publish-msix
+
+      - name: Prepare MSIX layout
+        shell: pwsh
+        run: |
+          # Stamp version into manifest
+          $manifest = Get-Content WavBall/Package.appxmanifest -Raw
+          $manifest = $manifest -replace 'Version="0.0.0.0"', "Version=""${{ steps.version.outputs.MSIX_VERSION }}"""
+          Set-Content publish-msix/AppxManifest.xml $manifest
+
+          # Copy tile assets
+          New-Item -ItemType Directory -Path publish-msix/Assets -Force | Out-Null
+          Copy-Item WavBall/Assets/MsixTiles/* publish-msix/Assets/
+
+      - name: Create MSIX package
+        shell: pwsh
+        run: |
+          $sdkBin = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\10.*\x64" |
+            Sort-Object Name -Descending | Select-Object -First 1
+          & "$sdkBin\MakeAppx.exe" pack /d publish-msix /p WavBall.msix /o
+
+      - name: Sign MSIX
+        shell: pwsh
+        run: |
+          $pfxBytes = [Convert]::FromBase64String("${{ secrets.MSIX_CERT_PFX }}")
+          $pfxPath = "$env:RUNNER_TEMP\cert.pfx"
+          [IO.File]::WriteAllBytes($pfxPath, $pfxBytes)
+
+          $sdkBin = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\10.*\x64" |
+            Sort-Object Name -Descending | Select-Object -First 1
+          & "$sdkBin\SignTool.exe" sign /fd SHA256 /a `
+            /f $pfxPath `
+            /p "${{ secrets.MSIX_CERT_PASSWORD }}" `
+            /tr http://timestamp.digicert.com /td SHA256 `
+            WavBall.msix
+
+          Remove-Item $pfxPath -ErrorAction SilentlyContinue
+
+      - name: Build installer package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path installer-output -Force | Out-Null
+          Copy-Item WavBall.msix installer-output/
+          # Export public cert from the PFX for testers
+          $pfxBytes = [Convert]::FromBase64String("${{ secrets.MSIX_CERT_PFX }}")
+          $pfxPath = "$env:RUNNER_TEMP\cert.pfx"
+          [IO.File]::WriteAllBytes($pfxPath, $pfxBytes)
+          $pw = ConvertTo-SecureString -String "${{ secrets.MSIX_CERT_PASSWORD }}" -Force -AsPlainText
+          $cert = Get-PfxCertificate -FilePath $pfxPath
+          Export-Certificate -Cert $cert -FilePath installer-output/WavBall.cer
+          Remove-Item $pfxPath -ErrorAction SilentlyContinue
+          Copy-Item Installer/Setup.cmd installer-output/
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WavBall-Installer
+          path: installer-output/
 
   release:
     needs: build
@@ -43,7 +123,7 @@ jobs:
       contents: write
 
     steps:
-      - name: Download artifact
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts

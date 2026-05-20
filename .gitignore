@@ -36,3 +36,8 @@ Thumbs.db
 .DS_Store
 /AudioVisualizer/AudioVisualizer.code-workspace
 /.github/copilot-instructions.md
+
+# Signing certificates
+*.pfx
+*.cer
+.cert-thumbprint
