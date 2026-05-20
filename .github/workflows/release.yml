@@ -99,6 +99,17 @@ jobs:
 
           Remove-Item $pfxPath -ErrorAction SilentlyContinue
 
+      - name: Export cert for installer embedding
+        shell: pwsh
+        run: |
+          $pfxBytes = [Convert]::FromBase64String("${{ secrets.MSIX_CERT_PFX }}")
+          $pfxPath = "$env:RUNNER_TEMP\cert.pfx"
+          [IO.File]::WriteAllBytes($pfxPath, $pfxBytes)
+          $coll = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2Collection
+          $coll.Import($pfxPath, "${{ secrets.MSIX_CERT_PASSWORD }}", "DefaultKeySet")
+          Export-Certificate -Cert $coll[0] -FilePath WavBall-dev.cer
+          Remove-Item $pfxPath -ErrorAction SilentlyContinue
+
       - name: Build installer exe
         shell: pwsh
         run: >
