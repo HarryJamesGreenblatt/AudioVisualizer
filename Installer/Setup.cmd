@@ -1,3 +1,3 @@
 @echo off
-:: WavBall Installer — launches the GUI installer with no visible console.
-powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0Install.ps1"
+:: WavBall Installer — unblocks downloaded files and launches the GUI installer.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Get-ChildItem '%~dp0' | Unblock-File; & '%~dp0Install.ps1'"
