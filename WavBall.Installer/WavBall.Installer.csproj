@@ -1,0 +1,22 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>WavBall-Setup</AssemblyName>
+    <Product>WavBall Setup</Product>
+    <AssemblyTitle>WavBall Setup</AssemblyTitle>
+    <Description>Installer for Windows WavBall</Description>
+    <Authors>Harry Greenblatt</Authors>
+    <ApplicationIcon>..\WavBall\Assets\Images\Icon.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\WavBall-dev.cer" LogicalName="WavBall.cer" />
+    <EmbeddedResource Include="..\WavBall\Assets\Images\Icon.png" LogicalName="Icon.png" />
+  </ItemGroup>
+
+</Project>

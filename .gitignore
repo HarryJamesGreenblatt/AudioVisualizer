@@ -41,3 +41,8 @@ Thumbs.db
 *.pfx
 *.cer
 .cert-thumbprint
+
+# Installer build output
+installer-test/
+installer-build/
+installer-output/

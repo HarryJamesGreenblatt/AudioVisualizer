@@ -99,22 +99,40 @@ jobs:
 
           Remove-Item $pfxPath -ErrorAction SilentlyContinue
 
+      - name: Build installer exe
+        shell: pwsh
+        run: >
+          dotnet publish WavBall.Installer/WavBall.Installer.csproj
+          -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=embedded
+          -o installer-build
+
+      - name: Sign installer exe
+        shell: pwsh
+        run: |
+          $pfxBytes = [Convert]::FromBase64String("${{ secrets.MSIX_CERT_PFX }}")
+          $pfxPath = "$env:RUNNER_TEMP\cert.pfx"
+          [IO.File]::WriteAllBytes($pfxPath, $pfxBytes)
+
+          $signTool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\SignTool.exe" -ErrorAction SilentlyContinue |
+            Sort-Object { $_.Directory.Parent.Name } -Descending | Select-Object -First 1
+          if (-not $signTool) { throw "SignTool.exe not found" }
+          & $signTool.FullName sign /fd SHA256 /a `
+            /f $pfxPath `
+            /p "${{ secrets.MSIX_CERT_PASSWORD }}" `
+            /tr http://timestamp.digicert.com /td SHA256 `
+            installer-build/WavBall-Setup.exe
+
+          Remove-Item $pfxPath -ErrorAction SilentlyContinue
+
       - name: Build installer package
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path installer-output -Force | Out-Null
+          Copy-Item installer-build/WavBall-Setup.exe installer-output/
           Copy-Item WavBall.msix installer-output/
-          # Export public cert from the PFX for testers
-          $pfxBytes = [Convert]::FromBase64String("${{ secrets.MSIX_CERT_PFX }}")
-          $pfxPath = "$env:RUNNER_TEMP\cert.pfx"
-          [IO.File]::WriteAllBytes($pfxPath, $pfxBytes)
-          $pw = ConvertTo-SecureString -String "${{ secrets.MSIX_CERT_PASSWORD }}" -Force -AsPlainText
-          $coll = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2Collection
-          $coll.Import($pfxPath, "${{ secrets.MSIX_CERT_PASSWORD }}", "DefaultKeySet")
-          Export-Certificate -Cert $coll[0] -FilePath installer-output/WavBall.cer
-          Remove-Item $pfxPath -ErrorAction SilentlyContinue
-          Copy-Item Installer/Setup.cmd installer-output/
-          Copy-Item Installer/Install.ps1 installer-output/
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
