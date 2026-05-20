@@ -316,14 +316,30 @@ public abstract class Rendering
 
         private static string SpriteFileName(BallKind kind) => kind switch
         {
-            BallKind.BeachBall   => "beach-ball.png",
-            BallKind.Racquetball => "racquetball.png",
-            BallKind.TennisBall  => "tennis-ball.png",
-            BallKind.SoccerBall  => "soccer-ball.png",
-            BallKind.Basketball  => "basketball.png",
-            BallKind.Baseball    => "baseball.png",
-            BallKind.BowlingBall => "bowling-ball.png",
-            _                    => "beach-ball.png",
+            BallKind.BeachBall     => "beach-ball.png",
+            BallKind.SuperBall     => "super-ball.png",
+            BallKind.PingPongBall  => "ping-pong-ball.png",
+            BallKind.Racquetball   => "racquetball.png",
+            BallKind.WiffleBall    => "wiffle-ball.png",
+            BallKind.Volleyball    => "volleyball.png",
+            BallKind.TennisBall    => "tennis-ball.png",
+            BallKind.Handball      => "handball.png",
+            BallKind.LacrosseBall  => "lacrosse-ball.png",
+            BallKind.SoccerBall    => "soccer-ball.png",
+            BallKind.Basketball    => "basketball.png",
+            BallKind.WaterPoloBall => "water-polo-ball.png",
+            BallKind.Football      => "football.png",
+            BallKind.GolfBall      => "golf-ball.png",
+            BallKind.Dodgeball     => "dodgeball.png",
+            BallKind.BilliardBall  => "billiard-ball.png",
+            BallKind.Baseball      => "baseball.png",
+            BallKind.CricketBall   => "cricket-ball.png",
+            BallKind.SquashBall    => "squash-ball.png",
+            BallKind.MedicineBall  => "medicine-ball.png",
+            BallKind.BowlingBall   => "bowling-ball.png",
+            BallKind.BocceBall     => "bocce-ball.png",
+            BallKind.Cannonball    => "cannonball.png",
+            _                      => "beach-ball.png",
         };
     }
     #endregion

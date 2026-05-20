@@ -55,12 +55,28 @@ public partial class MainWindow : Window
     private static readonly (string Mass, string Radius)[] _ballRealWorld =
     [
         ("100 g",  "22 cm"),    // Beach Ball
+        ("50 g",   "2.3 cm"),   // Super Ball
+        ("2.7 g",  "2.0 cm"),   // Ping Pong Ball
         ("40 g",   "3.0 cm"),   // Racquetball
+        ("23 g",   "3.8 cm"),   // Wiffle Ball
+        ("270 g",  "10.5 cm"),  // Volleyball
         ("58 g",   "3.3 cm"),   // Tennis Ball
+        ("425 g",  "9.0 cm"),   // Handball
+        ("150 g",  "3.2 cm"),   // Lacrosse Ball
         ("430 g",  "11 cm"),    // Soccer Ball
         ("620 g",  "12 cm"),    // Basketball
+        ("420 g",  "11 cm"),    // Water Polo Ball
+        ("410 g",  "8.5 cm"),   // Football
+        ("46 g",   "2.1 cm"),   // Golf Ball
+        ("300 g",  "10.5 cm"),  // Dodgeball
+        ("170 g",  "2.6 cm"),   // Billiard Ball
         ("142 g",  "3.7 cm"),   // Baseball
+        ("160 g",  "3.6 cm"),   // Cricket Ball
+        ("24 g",   "2.0 cm"),   // Squash Ball
+        ("4.5 kg", "14 cm"),    // Medicine Ball
         ("4.3 kg", "10.9 cm"),  // Bowling Ball
+        ("920 g",  "5.4 cm"),   // Bocce Ball
+        ("5.4 kg", "7.5 cm"),   // Cannonball
     ];
 
     public MainWindow()
@@ -439,14 +455,30 @@ public partial class MainWindow : Window
     {
         var fileName = kind switch
         {
-            BallKind.BeachBall   => "beach-ball.png",
-            BallKind.Racquetball => "racquetball.png",
-            BallKind.TennisBall  => "tennis-ball.png",
-            BallKind.SoccerBall  => "soccer-ball.png",
-            BallKind.Basketball  => "basketball.png",
-            BallKind.Baseball    => "baseball.png",
-            BallKind.BowlingBall => "bowling-ball.png",
-            _                    => "beach-ball.png",
+            BallKind.BeachBall     => "beach-ball.png",
+            BallKind.SuperBall     => "super-ball.png",
+            BallKind.PingPongBall  => "ping-pong-ball.png",
+            BallKind.Racquetball   => "racquetball.png",
+            BallKind.WiffleBall    => "wiffle-ball.png",
+            BallKind.Volleyball    => "volleyball.png",
+            BallKind.TennisBall    => "tennis-ball.png",
+            BallKind.Handball      => "handball.png",
+            BallKind.LacrosseBall  => "lacrosse-ball.png",
+            BallKind.SoccerBall    => "soccer-ball.png",
+            BallKind.Basketball    => "basketball.png",
+            BallKind.WaterPoloBall => "water-polo-ball.png",
+            BallKind.Football      => "football.png",
+            BallKind.GolfBall      => "golf-ball.png",
+            BallKind.Dodgeball     => "dodgeball.png",
+            BallKind.BilliardBall  => "billiard-ball.png",
+            BallKind.Baseball      => "baseball.png",
+            BallKind.CricketBall   => "cricket-ball.png",
+            BallKind.SquashBall    => "squash-ball.png",
+            BallKind.MedicineBall  => "medicine-ball.png",
+            BallKind.BowlingBall   => "bowling-ball.png",
+            BallKind.BocceBall     => "bocce-ball.png",
+            BallKind.Cannonball    => "cannonball.png",
+            _                      => "beach-ball.png",
         };
         var uri = new Uri($"pack://application:,,,/Assets/Generated/{fileName}", UriKind.Absolute);
         var bmp = new BitmapImage();

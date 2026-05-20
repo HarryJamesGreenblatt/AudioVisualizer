@@ -411,14 +411,30 @@ public sealed class VisualizerElement : FrameworkElement
         var preset = stage < BallPreset.Stages.Length ? BallPreset.Stages[stage] : BallPreset.Stages[0];
         return preset.Kind switch
         {
-            BallKind.BeachBall   => [Color.FromRgb(220, 50, 50), Color.FromRgb(255, 220, 50), Color.FromRgb(50, 120, 220), Colors.White],
-            BallKind.Basketball  => [Color.FromRgb(200, 100, 20), Color.FromRgb(230, 130, 40), Color.FromRgb(160, 80, 15)],
-            BallKind.TennisBall  => [Color.FromRgb(200, 220, 50), Color.FromRgb(180, 200, 40), Colors.White],
-            BallKind.SoccerBall  => [Colors.White, Color.FromRgb(200, 200, 200), Color.FromRgb(30, 30, 30)],
-            BallKind.Baseball    => [Color.FromRgb(245, 240, 230), Color.FromRgb(200, 40, 40), Colors.White],
-            BallKind.Racquetball => [Color.FromRgb(30, 100, 220), Color.FromRgb(50, 130, 255), Color.FromRgb(20, 70, 180)],
-            BallKind.BowlingBall => [Color.FromRgb(40, 40, 55), Color.FromRgb(60, 60, 80), Color.FromRgb(25, 25, 35)],
-            _                    => [Colors.White],
+            BallKind.BeachBall     => [Color.FromRgb(220, 50, 50), Color.FromRgb(255, 220, 50), Color.FromRgb(50, 120, 220), Colors.White],
+            BallKind.SuperBall     => [Color.FromRgb(30, 140, 255), Color.FromRgb(60, 200, 255), Color.FromRgb(20, 100, 200)],
+            BallKind.PingPongBall  => [Colors.White, Color.FromRgb(255, 200, 140), Color.FromRgb(255, 240, 220)],
+            BallKind.Racquetball   => [Color.FromRgb(30, 100, 220), Color.FromRgb(50, 130, 255), Color.FromRgb(20, 70, 180)],
+            BallKind.WiffleBall    => [Colors.White, Color.FromRgb(255, 255, 200), Color.FromRgb(240, 240, 230)],
+            BallKind.Volleyball    => [Colors.White, Color.FromRgb(255, 220, 50), Color.FromRgb(50, 100, 200)],
+            BallKind.TennisBall    => [Color.FromRgb(200, 220, 50), Color.FromRgb(180, 200, 40), Colors.White],
+            BallKind.Handball      => [Color.FromRgb(180, 40, 40), Color.FromRgb(220, 100, 30), Color.FromRgb(30, 30, 30)],
+            BallKind.LacrosseBall  => [Colors.White, Color.FromRgb(220, 220, 220), Color.FromRgb(180, 180, 180)],
+            BallKind.SoccerBall    => [Colors.White, Color.FromRgb(200, 200, 200), Color.FromRgb(30, 30, 30)],
+            BallKind.Basketball    => [Color.FromRgb(200, 100, 20), Color.FromRgb(230, 130, 40), Color.FromRgb(160, 80, 15)],
+            BallKind.WaterPoloBall => [Color.FromRgb(255, 220, 50), Color.FromRgb(50, 120, 200), Colors.White],
+            BallKind.Football      => [Color.FromRgb(140, 80, 30), Color.FromRgb(180, 110, 50), Colors.White],
+            BallKind.GolfBall      => [Colors.White, Color.FromRgb(245, 245, 240), Color.FromRgb(220, 220, 210)],
+            BallKind.Dodgeball     => [Color.FromRgb(200, 30, 30), Color.FromRgb(150, 20, 20), Color.FromRgb(30, 30, 30)],
+            BallKind.BilliardBall  => [Color.FromRgb(160, 20, 20), Color.FromRgb(240, 230, 200), Color.FromRgb(200, 170, 50)],
+            BallKind.Baseball      => [Color.FromRgb(245, 240, 230), Color.FromRgb(200, 40, 40), Colors.White],
+            BallKind.CricketBall   => [Color.FromRgb(160, 30, 30), Color.FromRgb(120, 15, 15), Color.FromRgb(200, 170, 50)],
+            BallKind.SquashBall    => [Color.FromRgb(20, 20, 30), Color.FromRgb(40, 40, 60), Color.FromRgb(10, 10, 15)],
+            BallKind.MedicineBall  => [Color.FromRgb(30, 30, 30), Color.FromRgb(140, 30, 30), Color.FromRgb(80, 80, 80)],
+            BallKind.BowlingBall   => [Color.FromRgb(40, 40, 55), Color.FromRgb(60, 60, 80), Color.FromRgb(25, 25, 35)],
+            BallKind.BocceBall     => [Color.FromRgb(40, 120, 50), Color.FromRgb(200, 170, 50), Color.FromRgb(240, 230, 200)],
+            BallKind.Cannonball    => [Color.FromRgb(60, 60, 60), Color.FromRgb(100, 70, 40), Color.FromRgb(30, 30, 30)],
+            _                      => [Colors.White],
         };
     }
     #endregion
