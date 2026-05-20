@@ -9,7 +9,7 @@ $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
 
 if (-not $isAdmin) {
     Write-Host "Requesting administrator privileges..." -ForegroundColor Yellow
-    $argList = '-ExecutionPolicy Bypass -File "{0}" -Elevated' -f $PSCommandPath
+    $argList = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -Elevated' -f $PSCommandPath
     try {
         Start-Process powershell.exe -Verb RunAs -ArgumentList $argList -Wait
     }
