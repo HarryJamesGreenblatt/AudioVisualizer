@@ -109,8 +109,9 @@ jobs:
           $pfxPath = "$env:RUNNER_TEMP\cert.pfx"
           [IO.File]::WriteAllBytes($pfxPath, $pfxBytes)
           $pw = ConvertTo-SecureString -String "${{ secrets.MSIX_CERT_PASSWORD }}" -Force -AsPlainText
-          $cert = Get-PfxCertificate -FilePath $pfxPath
-          Export-Certificate -Cert $cert -FilePath installer-output/WavBall.cer
+          $coll = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2Collection
+          $coll.Import($pfxPath, "${{ secrets.MSIX_CERT_PASSWORD }}", "DefaultKeySet")
+          Export-Certificate -Cert $coll[0] -FilePath installer-output/WavBall.cer
           Remove-Item $pfxPath -ErrorAction SilentlyContinue
           Copy-Item Installer/Setup.cmd installer-output/
 
