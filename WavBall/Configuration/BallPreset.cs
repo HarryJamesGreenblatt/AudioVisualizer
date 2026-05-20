@@ -93,7 +93,7 @@ public sealed record BallPreset(
         new(BallKind.SuperBall,      "Super Ball",       11,     0.5,   800f,  0.92f, 0.08f, 0.0004f, 0.3f,  0.30f, 2.5f),
         new(BallKind.PingPongBall,   "Ping Pong Ball",   10,     0.3,   800f,  0.90f, 0.35f, 0.0030f, 1.0f,  0.25f, 2.8f),
         new(BallKind.Racquetball,    "Racquetball",      14,     0.8,   800f,  0.87f, 0.10f, 0.0006f, 0.4f,  0.40f, 2.2f),
-        new(BallKind.WiffleBall,     "Wiffle Ball",      16,     0.4,   800f,  0.40f, 2.00f, 0.0200f, 1.5f,  0.30f, 1.8f),
+        new(BallKind.WiffleBall,     "Wiffle Ball",      16,     0.4,   800f,  0.40f, 0.40f, 0.0025f, 1.5f,  0.30f, 1.8f),
         new(BallKind.Volleyball,     "Volleyball",       27,     2.5,   800f,  0.75f, 0.55f, 0.0060f, 0.7f,  0.55f, 1.1f),
         new(BallKind.TennisBall,     "Tennis Ball",      16,     1.2,   800f,  0.73f, 0.25f, 0.0015f, 0.9f,  0.65f, 1.8f),
         new(BallKind.Handball,       "Handball",         23,     1.5,   800f,  0.68f, 0.20f, 0.0012f, 0.7f,  0.70f, 1.6f),
