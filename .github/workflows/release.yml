@@ -114,6 +114,7 @@ jobs:
           Export-Certificate -Cert $coll[0] -FilePath installer-output/WavBall.cer
           Remove-Item $pfxPath -ErrorAction SilentlyContinue
           Copy-Item Installer/Setup.cmd installer-output/
+          Copy-Item Installer/Install.ps1 installer-output/
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
