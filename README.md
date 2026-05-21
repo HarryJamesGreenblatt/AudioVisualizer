@@ -14,14 +14,14 @@ A real-time audio spectrum visualizer and physics game for Windows built with WP
 - **Peak Hold with Gravity** — floating peak indicators rise instantly and fall with simulated gravity
 - **Tear-Free Rendering** — lock-free double-buffered pipeline between the audio capture thread and WPF compositor
 - **Low Latency** — 1024-sample FFT window (~21ms) with fast-attack smoothing for tight transient response
-- **Interactive Ball Physics** — 7 unique ball types (beach ball → bowling ball) with Newtonian physics, drag-and-throw interaction, and collision against the live spectrum surface
+- **Interactive Ball Physics** — 23 unique ball types with Newtonian physics, drag-and-throw interaction, and collision against the live spectrum surface. Difficulty progression from Beach Ball (mascot, always first) through Super Ball, Ping Pong, Racquetball, Wiffle Ball, and 17 more — all the way to the Cannonball final boss.
 - **Audio-Driven Rain** — variable-size raindrops with parallax depth, bass-driven wind, snare-burst spawning, and motion-blur trail rendering
 - **Game Mode** — stage-based progression: guide each ball into a golden goal ring using the music itself as the playing field, with anti-cheat and particle burst scoring effects
 - **Autonomous Goal Agent** — the goal is a "mosquito" that hunts for musical energy: a two-dimensional appetite machine (Charge sensor + Satiety integrator) cycles between Feeding (proximity-weighted loudest band) and Sated (retreats to a randomized altitude above the action via anti-centroid X), so it migrates across the playing field on a polyrhythmic schedule rather than locking to one peak
 - **Dual-Layer Goal Visual** — a cool cyan halo that grows with appetite-cycle state and pulses with bass kicks, around a warm gold ring that deforms into an oscilloscope-style squiggle on snare hits (high-frequency sinusoidal radial perturbation with exponential ring-out) — geometric shape encodes transient energy while brightness encodes collidability
 - **Per-Band Thermal Luminosity** — bars glow brighter with sustained activity; treble bands charge faster
 - **WMP9-Inspired Shell** — three-row Windows Media Player 9 ("Corona") chrome, with layout and sprite positions derived from the original `Corona.wms` skin layout spec. Blue metallic chrome frame (gradient sampled from `equalizer_middle.png`) around the visualizer with metallic bevel separators. Transport chrome panel uses the original `equalizer_left/middle/right` bitmaps as background, with the full `transports.png` atlas (136×30) rendered as a single image — per-button hover/down via clipped overlays. Pause is a 30×30 overlay at the play position. Rain toggle wired to the `>>` button with glow effect; mic toggle has a custom icon overlay. Palette sampled from the 2002 Microsoft sprite atlases.
-- **Side Panel** — WMP9-style info panel: ball sprite icon (from game assets), physics stats (mass, restitution, radius in real-world units), LED round timer, and a pre-populated round history list (all 7 ball types visible from the start, "-" for uncompleted times, current ball highlighted amber). Now Playing section shows album art + track metadata from the active media session.
+- **Side Panel** — WMP9-style info panel: ball sprite icon (AI-generated photorealistic PNGs), physics stats (mass, restitution, radius in real-world units), LED round timer, and a pre-populated round history list (all 23 ball types visible from the start, "-" for uncompleted times, current ball highlighted amber). Now Playing section shows album art + track metadata from the active media session.
 - **Goal Status HUD** — green LED strip below the visualizer shows real-time goal state: left indicator (◎ DISCHARGED / ◎ ARMED with gold blink) tracks collidability, right indicator (⚡ CHARGING / ⚡ OVERCHARGED with red blink) tracks the goal's feeding/sated appetite cycle.
 - **System Volume Control** — master volume slider wired to the default audio endpoint via NAudio `MMDeviceEnumerator`; syncs bidirectionally with external changes (taskbar, hardware keys).
 - **System Media-Key Integration** — the ◀ / ▶ buttons send `VK_MEDIA_PREV_TRACK` / `VK_MEDIA_NEXT_TRACK` globally, so they skip tracks in whatever app is currently playing (Spotify, browsers, Groove, foobar, etc.) without requiring focus or per-app integration.
@@ -38,10 +38,10 @@ WavBall/
 │   ├── Steering.cs           # Autonomous-agent motion (goal two-dimensional appetite machine)
 │   └── Charge.cs             # Spatial-audio sensor (Gaussian-KDE potential + asymmetric capacitor)
 ├── Configuration/
-│   └── BallPreset.cs         # 7-stage ball catalog (kind, mass, COR, drag)
+│   └── BallPreset.cs         # 23-stage ball catalog (kind, mass, COR, drag)
 ├── Entities/
 │   ├── World.cs              # Base entity: position, velocity, component slots
-│   ├── Ball.cs               # Draggable physics ball (7 types)
+│   ├── Ball.cs               # Draggable physics ball (23 types)
 │   ├── Bar.cs                # Audio-reactive spectrum bars
 │   ├── Goal.cs               # Golden ring target for game mode
 │   ├── Peak.cs               # Gravity-driven peak indicators
@@ -75,7 +75,16 @@ WavBall/
 ├── Scene.cs                  # Game loop: fixed-timestep physics + render
 ├── VisualizerElement.cs      # WPF host: entity management, layer toggles
 ├── MainWindow.xaml/.cs       # WMP9 shell (4-row Grid: chrome / visualizer+panel / metadata / transport)
+├── Package.appxmanifest      # MSIX manifest (full trust, mediumIL for WASAPI)
 └── App.xaml/.cs              # Application entry point (merges Wmp9.xaml resources)
+
+Installer/
+├── Setup.cmd                 # Thin wrapper: unblocks files, launches Install.ps1
+└── Install.ps1               # WinForms GUI installer (WMP9 Corona theme)
+
+WavBall.Installer/            # Standalone installer exe (ready for Azure Trusted Signing)
+├── InstallerForm.cs
+└── Program.cs
 ```
 
 ### Data Pipeline
@@ -102,6 +111,18 @@ WavBall/
 | [NAudio](https://github.com/naudio/NAudio) | 2.3.0 | WASAPI loopback audio capture |
 | [NWaves](https://github.com/ar1st0crat/NWaves) | 0.9.6 | FFT engine and window functions |
 | [WPF-UI](https://github.com/lepoco/wpfui) | 4.3.0 | Fluent dark theme and toggle controls |
+
+## Installation
+
+Download the latest **WavBall-Installer.zip** from the [Releases](https://github.com/HarryJamesGreenblatt/WavBall/releases) page.
+
+1. Extract the ZIP
+2. Double-click **Setup.cmd**
+3. Accept the UAC prompt (one-time certificate trust)
+4. Click **Install** in the WavBall Setup dialog
+5. Find **WavBall** in your Start Menu
+
+> A portable single-file exe is also available as **WavBall-win-x64.zip** — extract and run, no installation needed.
 
 ## Getting Started
 
