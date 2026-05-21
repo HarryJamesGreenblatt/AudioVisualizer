@@ -15,7 +15,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="..\WavBall-dev.cer" LogicalName="WavBall.cer" />
+    <EmbeddedResource Include="WavBall-dev.cer" LogicalName="WavBall.cer" />
     <EmbeddedResource Include="..\WavBall\Assets\Images\Icon.png" LogicalName="Icon.png" />
   </ItemGroup>
 

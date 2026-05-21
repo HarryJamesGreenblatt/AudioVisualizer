@@ -38,9 +38,9 @@ Thumbs.db
 /.github/copilot-instructions.md
 
 # Signing certificates
-*.pfx
-*.cer
-.cert-thumbprint
+WavBall.Installer/*.pfx
+WavBall.Installer/*.cer
+WavBall.Installer/.cert-thumbprint
 
 # Installer build output
 installer-test/

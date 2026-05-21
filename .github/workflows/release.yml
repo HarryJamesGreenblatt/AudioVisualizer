@@ -103,7 +103,6 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path installer-output -Force | Out-Null
-          Copy-Item WavBall.msix installer-output/
           # Export public cert from the PFX for testers
           $pfxBytes = [Convert]::FromBase64String("${{ secrets.MSIX_CERT_PFX }}")
           $pfxPath = "$env:RUNNER_TEMP\cert.pfx"
@@ -112,8 +111,8 @@ jobs:
           $coll.Import($pfxPath, "${{ secrets.MSIX_CERT_PASSWORD }}", "DefaultKeySet")
           Export-Certificate -Cert $coll[0] -FilePath installer-output/WavBall.cer
           Remove-Item $pfxPath -ErrorAction SilentlyContinue
-          Copy-Item Installer/Setup.cmd installer-output/
-          Copy-Item Installer/Install.ps1 installer-output/
+          Copy-Item WavBall.Installer/Setup.cmd installer-output/
+          Copy-Item WavBall.Installer/Install.ps1 installer-output/
           Copy-Item WavBall/Assets/Images/Icon.png installer-output/
           Copy-Item WavBall.msix installer-output/
 
