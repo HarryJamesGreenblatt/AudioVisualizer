@@ -114,6 +114,7 @@ jobs:
           Remove-Item $pfxPath -ErrorAction SilentlyContinue
           Copy-Item Installer/Setup.cmd installer-output/
           Copy-Item Installer/Install.ps1 installer-output/
+          Copy-Item WavBall/Assets/Images/Icon.png installer-output/
           Copy-Item WavBall.msix installer-output/
 
       - name: Upload installer artifact

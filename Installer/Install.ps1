@@ -46,10 +46,9 @@ $topBar.Size = New-Object System.Drawing.Size(640, 100)
 $topBar.BackColor = $steelDark
 $form.Controls.Add($topBar)
 
-# Load icon for the title bar
-$iconPath = Join-Path $PSScriptRoot "WavBall.cer"  # placeholder — check for icon
-$logoPath = Join-Path $PSScriptRoot "..\WavBall\Assets\Images\Icon.png"
-if (-not (Test-Path $logoPath)) { $logoPath = Join-Path $PSScriptRoot "Icon.png" }
+# Load icon for the chrome bar and form
+$logoPath = Join-Path $PSScriptRoot "Icon.png"
+if (-not (Test-Path $logoPath)) { $logoPath = Join-Path $PSScriptRoot "..\WavBall\Assets\Images\Icon.png" }
 
 if (Test-Path $logoPath) {
     $logoImage = [System.Drawing.Image]::FromFile((Resolve-Path $logoPath))
