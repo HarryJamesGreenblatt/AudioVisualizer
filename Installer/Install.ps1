@@ -133,6 +133,8 @@ function Update-Status($text, $pct) {
 }
 
 $installButton.Add_Click({
+    if ($script:done) { $form.Close(); return }
+
     $installButton.Enabled = $false
 
     # Step 1: Import certificate (elevated)
@@ -169,26 +171,22 @@ $installButton.Add_Click({
 
     try {
         Add-AppxPackage -Path $msixPath -ForceApplicationShutdown
-        Update-Status "WavBall installed successfully!" 100
-        $installButton.Text = "Done"
+        Update-Status "WavBall installed successfully!  Find it in your Start Menu." 100
+        $installButton.Text = "Close"
         $installButton.Enabled = $true
         $script:done = $true
     } catch {
         Update-Status "Falling back to App Installer..." 80
         $form.Refresh()
         Start-Process $msixPath
-        Update-Status "App Installer opened." 100
+        Update-Status "Follow the App Installer prompts to complete setup." 100
         $installButton.Text = "Close"
         $installButton.Enabled = $true
         $script:done = $true
     }
 })
 
-$closeHandler = { $form.Close() }
 $script:done = $false
-$installButton.Add_Click({
-    if ($script:done) { $form.Close() }
-})
 
 # ── Show form ──
 $form.ShowDialog() | Out-Null
